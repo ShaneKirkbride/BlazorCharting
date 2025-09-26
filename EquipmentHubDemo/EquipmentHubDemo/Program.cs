@@ -22,6 +22,7 @@ builder.Services.AddAntiforgery();
 builder.Services.AddHttpClient();
 builder.Services.Configure<ApiClientOptions>(options =>
     builder.Configuration.GetSection(ApiClientOptions.SectionName).Bind(options));
+builder.Services.AddScoped<IApiBaseUriProvider, ApiBaseUriProvider>();
 builder.Services.AddScoped<ILiveMeasurementClient, HttpLiveMeasurementClient>();
 
 // Infra + services

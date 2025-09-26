@@ -18,6 +18,7 @@ builder.Services.AddScoped(sp => new HttpClient
     BaseAddress = new Uri(builder.HostEnvironment.BaseAddress)
 });
 
+builder.Services.AddScoped<IApiBaseUriProvider, ApiBaseUriProvider>();
 builder.Services.AddScoped<ILiveMeasurementClient, HttpLiveMeasurementClient>();
 
 await builder.Build().RunAsync();
