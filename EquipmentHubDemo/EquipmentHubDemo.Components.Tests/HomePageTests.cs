@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Net;
-using System.Reflection;
-using System.Text;
+using System.Linq;
+using System.Threading;
 using Bunit;
 using EquipmentHubDemo.Components.Pages;
 using EquipmentHubDemo.Domain;
-using Microsoft.AspNetCore.Components;
+using EquipmentHubDemo.Domain.Live;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -18,20 +17,18 @@ public sealed class HomePageTests : TestContext
     public void Home_RendersChartIsland_WhenKeysAreAvailable()
     {
         // Arrange
-        var handler = new StubHttpMessageHandler();
-        handler.RegisterJsonResponse("http://localhost/api/keys", "[\"Line A\"]");
-        var encodedKey = Uri.EscapeDataString("Line A");
-        handler.RegisterJsonResponse(
-            $"http://localhost/api/live?key={encodedKey}&sinceTicks=0",
-            "[{\"x\":\"2024-01-01T00:00:00Z\",\"y\":1.5}]");
+        var measurementClient = new StubLiveMeasurementClient(
+            keysSequence: new[]
+            {
+                new[] { "Line A" }
+            },
+            measurementsSequence: new IReadOnlyList<PointDto>[]
+            {
+                new[] { new PointDto { X = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc), Y = 1.5 } },
+                Array.Empty<PointDto>()
+            });
 
-        var httpClient = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("http://localhost/")
-        };
-
-        Services.AddSingleton<HttpClient>(httpClient);
-        Services.AddSingleton<NavigationManager>(new StubNavigationManager());
+        Services.AddSingleton<ILiveMeasurementClient>(measurementClient);
 
         // Act
         var cut = RenderComponent<Home>();
@@ -51,133 +48,89 @@ public sealed class HomePageTests : TestContext
     public void Home_RendersChartIsland_WhenKeysAppearLater()
     {
         // Arrange
-        var handler = new StubHttpMessageHandler();
-        var encodedKey = Uri.EscapeDataString("Line A");
-        handler.RegisterJsonSequence("http://localhost/api/keys", "[]", "[\"Line A\"]");
-        handler.RegisterJsonResponse(
-            $"http://localhost/api/live?key={encodedKey}&sinceTicks=0",
-            "[{\"x\":\"2024-01-01T00:00:00Z\",\"y\":1.5}]");
+        var measurementClient = new StubLiveMeasurementClient(
+            keysSequence: new IReadOnlyList<string>[]
+            {
+                Array.Empty<string>(),
+                new[] { "Line A" }
+            },
+            measurementsSequence: new IReadOnlyList<PointDto>[]
+            {
+                new[] { new PointDto { X = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc), Y = 1.5 } },
+                Array.Empty<PointDto>()
+            });
 
-        var httpClient = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("http://localhost/")
-        };
-
-        Services.AddSingleton<HttpClient>(httpClient);
-        Services.AddSingleton<NavigationManager>(new StubNavigationManager());
+        Services.AddSingleton<ILiveMeasurementClient>(measurementClient);
 
         // Act
         var cut = RenderComponent<Home>();
 
-        var totalField = typeof(Home).GetField("_totalReceived", BindingFlags.Instance | BindingFlags.NonPublic);
-        var pointsField = typeof(Home).GetField("_points", BindingFlags.Instance | BindingFlags.NonPublic);
-        Assert.NotNull(totalField);
-        Assert.NotNull(pointsField);
-
         // Ensure the live endpoint was polled.
         cut.WaitForAssertion(() =>
         {
-            Assert.Contains(handler.RequestedUris, uri =>
-            {
-                try
-                {
-                    var normalized = Uri.UnescapeDataString(uri);
-                    return normalized.StartsWith("http://localhost/api/live?key=Line A", StringComparison.Ordinal);
-                }
-                catch (UriFormatException)
-                {
-                    return false;
-                }
-            });
+            Assert.Contains(measurementClient.MeasurementRequests, r =>
+                string.Equals(r.Key, "Line A", StringComparison.Ordinal));
         }, timeout: TimeSpan.FromSeconds(5));
 
         // Assert - internal state receives live data without manual refresh.
         cut.WaitForAssertion(() =>
         {
-            var total = (long)(totalField!.GetValue(cut.Instance) ?? 0L);
-            var points = (List<PointDto>?)pointsField!.GetValue(cut.Instance);
+            Assert.True(measurementClient.MeasurementRequests.Count > 0, "should request live measurements");
 
-            Assert.True(total > 0, "total measurements should increase");
-            Assert.NotNull(points);
-            Assert.True(points!.Count > 0, "chart points should be populated");
+            var badge = cut.Find("span.badge").TextContent;
+            Assert.Contains("Measurements received", badge);
+            Assert.Contains("1", badge);
+
+            var chartPoints = cut.FindComponent<ChartIsland>().Instance;
+            Assert.NotNull(chartPoints);
         }, timeout: TimeSpan.FromSeconds(5));
     }
 
-    private sealed class StubNavigationManager : NavigationManager
+    private sealed class StubLiveMeasurementClient : ILiveMeasurementClient
     {
-        public StubNavigationManager()
+        private readonly Queue<IReadOnlyList<string>> _keys;
+        private readonly Queue<IReadOnlyList<PointDto>> _measurements;
+
+        public StubLiveMeasurementClient(
+            IEnumerable<IReadOnlyList<string>> keysSequence,
+            IEnumerable<IReadOnlyList<PointDto>> measurementsSequence)
         {
-            Initialize("http://localhost/", "http://localhost/");
+            _keys = new Queue<IReadOnlyList<string>>(Clone(keysSequence));
+            _measurements = new Queue<IReadOnlyList<PointDto>>(Clone(measurementsSequence));
         }
 
-        protected override void NavigateToCore(string uri, bool forceLoad)
-        {
-            // Navigation is not required for tests.
-        }
-    }
+        public List<(string Key, long SinceTicks)> MeasurementRequests { get; } = new();
 
-    private sealed class StubHttpMessageHandler : HttpMessageHandler
-    {
-        private readonly Dictionary<string, Queue<string>> _responses = new(StringComparer.OrdinalIgnoreCase);
-        public List<string> RequestedUris { get; } = new();
-
-        public void RegisterJsonResponse(string url, string json)
+        public Task<IReadOnlyList<string>> GetAvailableKeysAsync(CancellationToken cancellationToken = default)
         {
-            _responses[NormalizeUrl(url)] = new Queue<string>(new[] { json });
-        }
-
-        public void RegisterJsonSequence(string url, params string[] json)
-        {
-            if (json.Length == 0)
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_keys.Count == 0)
             {
-                throw new ArgumentException("Sequence must contain at least one entry.", nameof(json));
+                return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
             }
 
-            _responses[NormalizeUrl(url)] = new Queue<string>(json);
+            var value = _keys.Count > 1 ? _keys.Dequeue() : _keys.Peek();
+            return Task.FromResult(value);
         }
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<PointDto>> GetMeasurementsAsync(string key, long sinceTicks, CancellationToken cancellationToken = default)
         {
-            var uri = request.RequestUri?.ToString() ?? string.Empty;
-            RequestedUris.Add(uri);
-            var lookup = NormalizeUrl(uri);
-            if (_responses.TryGetValue(lookup, out var queue))
+            cancellationToken.ThrowIfCancellationRequested();
+            MeasurementRequests.Add((key, sinceTicks));
+
+            if (_measurements.Count == 0)
             {
-                var payload = queue.Count > 1 ? queue.Dequeue() : queue.Peek();
-                return Task.FromResult(CreateJsonResponse(payload));
+                return Task.FromResult<IReadOnlyList<PointDto>>(Array.Empty<PointDto>());
             }
 
-            if (uri.Contains("/api/live", StringComparison.OrdinalIgnoreCase))
-            {
-                return Task.FromResult(CreateJsonResponse("[]"));
-            }
-
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            var value = _measurements.Count > 1 ? _measurements.Dequeue() : _measurements.Peek();
+            return Task.FromResult(value);
         }
 
-        private static HttpResponseMessage CreateJsonResponse(string json)
-        {
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(json, Encoding.UTF8, "application/json")
-            };
-        }
+        private static IEnumerable<IReadOnlyList<string>> Clone(IEnumerable<IReadOnlyList<string>> source)
+            => source.Select(list => (IReadOnlyList<string>)list.ToArray());
 
-        private static string NormalizeUrl(string url)
-        {
-            if (string.IsNullOrEmpty(url))
-            {
-                return string.Empty;
-            }
-
-            try
-            {
-                return Uri.UnescapeDataString(url);
-            }
-            catch (UriFormatException)
-            {
-                return url;
-            }
-        }
+        private static IEnumerable<IReadOnlyList<PointDto>> Clone(IEnumerable<IReadOnlyList<PointDto>> source)
+            => source.Select(list => (IReadOnlyList<PointDto>)list.Select(p => new PointDto { X = p.X, Y = p.Y }).ToArray());
     }
 }
