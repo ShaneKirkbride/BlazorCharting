@@ -1,7 +1,7 @@
-﻿@inherits LayoutComponentBase
+@using System
+@inherits LayoutComponentBase
 
 <HeadContent>
-
 </HeadContent>
 
 <div class="container py-3">
@@ -17,5 +17,10 @@
     <footer class="mt-4 text-muted small">
         &copy; @DateTime.Now.Year EquipmentHubDemo
     </footer>
+
+    @if (!OperatingSystem.IsBrowser())
+    {
+        <script src="/_framework/blazor.web.js" defer></script>
+    }
     <script src="/_framework/aspnetcore-browser-refresh.js"></script>
 </div>
