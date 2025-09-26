@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Reflection;
@@ -19,8 +20,9 @@ public sealed class HomePageTests : TestContext
         // Arrange
         var handler = new StubHttpMessageHandler();
         handler.RegisterJsonResponse("http://localhost/api/keys", "[\"Line A\"]");
+        var encodedKey = Uri.EscapeDataString("Line A");
         handler.RegisterJsonResponse(
-            "http://localhost/api/live?key=Line A&sinceTicks=0",
+            $"http://localhost/api/live?key={encodedKey}&sinceTicks=0",
             "[{\"x\":\"2024-01-01T00:00:00Z\",\"y\":1.5}]");
 
         var httpClient = new HttpClient(handler)
@@ -50,9 +52,10 @@ public sealed class HomePageTests : TestContext
     {
         // Arrange
         var handler = new StubHttpMessageHandler();
+        var encodedKey = Uri.EscapeDataString("Line A");
         handler.RegisterJsonSequence("http://localhost/api/keys", "[]", "[\"Line A\"]");
         handler.RegisterJsonResponse(
-            "http://localhost/api/live?key=Line A&sinceTicks=0",
+            $"http://localhost/api/live?key={encodedKey}&sinceTicks=0",
             "[{\"x\":\"2024-01-01T00:00:00Z\",\"y\":1.5}]");
 
         var httpClient = new HttpClient(handler)
@@ -74,7 +77,18 @@ public sealed class HomePageTests : TestContext
         // Ensure the live endpoint was polled.
         cut.WaitForAssertion(() =>
         {
-            Assert.Contains(handler.RequestedUris, uri => uri.StartsWith("http://localhost/api/live?key=Line A", StringComparison.Ordinal));
+            Assert.Contains(handler.RequestedUris, uri =>
+            {
+                try
+                {
+                    var normalized = Uri.UnescapeDataString(uri);
+                    return normalized.StartsWith("http://localhost/api/live?key=Line A", StringComparison.Ordinal);
+                }
+                catch (UriFormatException)
+                {
+                    return false;
+                }
+            });
         }, timeout: TimeSpan.FromSeconds(5));
 
         // Assert - internal state receives live data without manual refresh.
@@ -109,7 +123,7 @@ public sealed class HomePageTests : TestContext
 
         public void RegisterJsonResponse(string url, string json)
         {
-            _responses[url] = new Queue<string>(new[] { json });
+            _responses[NormalizeUrl(url)] = new Queue<string>(new[] { json });
         }
 
         public void RegisterJsonSequence(string url, params string[] json)
@@ -119,14 +133,15 @@ public sealed class HomePageTests : TestContext
                 throw new ArgumentException("Sequence must contain at least one entry.", nameof(json));
             }
 
-            _responses[url] = new Queue<string>(json);
+            _responses[NormalizeUrl(url)] = new Queue<string>(json);
         }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var uri = request.RequestUri?.ToString() ?? string.Empty;
             RequestedUris.Add(uri);
-            if (_responses.TryGetValue(uri, out var queue))
+            var lookup = NormalizeUrl(uri);
+            if (_responses.TryGetValue(lookup, out var queue))
             {
                 var payload = queue.Count > 1 ? queue.Dequeue() : queue.Peek();
                 return Task.FromResult(CreateJsonResponse(payload));
@@ -146,6 +161,23 @@ public sealed class HomePageTests : TestContext
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             };
+        }
+
+        private static string NormalizeUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                return Uri.UnescapeDataString(url);
+            }
+            catch (UriFormatException)
+            {
+                return url;
+            }
         }
     }
 }
