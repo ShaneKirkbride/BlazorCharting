@@ -4,8 +4,7 @@
 @rendermode InteractiveWebAssembly
 @namespace EquipmentHubDemo.Components.Pages
 
-@inject HttpClient Http
-@inject NavigationManager Nav
+@inject ILiveMeasurementClient Measurements
 
 <h3>Live Measurements</h3>
 <p class="text-muted">Agent → Broker → Filter/Store → Live cache → (WASM UI)</p>
@@ -47,8 +46,6 @@
     private List<PointDto> _points = new();
     private long _totalReceived;
     private long _sinceTicks;
-
-    private string Api(string relative) => Nav.ToAbsoluteUri(relative).ToString();
 
     protected override async Task OnInitializedAsync()
     {
@@ -137,11 +134,7 @@
 
                 try
                 {
-                    var url = Api($"/api/live?key={Uri.EscapeDataString(key)}&sinceTicks={_sinceTicks}");
-                    var batch = await Http.GetFromJsonAsync<List<PointDto>>(url, new System.Text.Json.JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    }, ct);
+                    var batch = await Measurements.GetMeasurementsAsync(key, _sinceTicks, ct);
 
                     if (batch is null || batch.Count == 0)
                     {
@@ -214,7 +207,8 @@
 
     private async Task<bool> TryLoadKeysAsync(bool initialLoad)
     {
-        var latest = await Http.GetFromJsonAsync<List<string>>(Api("/api/keys")) ?? new();
+        var latestKeys = await Measurements.GetAvailableKeysAsync();
+        var latest = latestKeys is null ? new List<string>() : new List<string>(latestKeys);
 
         keys = latest;
         if (keys.Count == 0)
@@ -278,7 +272,8 @@
                 List<string> latest;
                 try
                 {
-                    latest = await Http.GetFromJsonAsync<List<string>>(Api("/api/keys"), ct) ?? new();
+                    var refreshedKeys = await Measurements.GetAvailableKeysAsync(ct);
+                    latest = refreshedKeys is null ? new List<string>() : new List<string>(refreshedKeys);
                 }
                 catch (OperationCanceledException)
                 {

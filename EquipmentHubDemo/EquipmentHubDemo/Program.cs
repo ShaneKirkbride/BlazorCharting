@@ -1,5 +1,8 @@
 using EquipmentHubDemo.Components;
+using EquipmentHubDemo.Client.Services;
 using EquipmentHubDemo.Domain;
+using EquipmentHubDemo.Domain.Live;
+using Microsoft.Extensions.Configuration;
 using EquipmentHubDemo.Infrastructure;
 using EquipmentHubDemo.Live;
 using EquipmentHubDemo.Workers;
@@ -17,6 +20,9 @@ builder.Services.AddAntiforgery();
 
 // Optional: server-side HttpClient (WASM gets its own automatically)
 builder.Services.AddHttpClient();
+builder.Services.Configure<ApiClientOptions>(options =>
+    builder.Configuration.GetSection(ApiClientOptions.SectionName).Bind(options));
+builder.Services.AddScoped<ILiveMeasurementClient, HttpLiveMeasurementClient>();
 
 // Infra + services
 builder.Services.AddSingleton<IMeasurementRepository>(sp =>
