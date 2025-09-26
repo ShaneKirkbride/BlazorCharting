@@ -18,6 +18,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EquipmentHubDemo.Components\EquipmentHubDemo.Components.csproj" />
+    <ProjectReference Include="..\EquipmentHubDemo.Client\EquipmentHubDemo.Client.csproj" />
+    <ProjectReference Include="..\EquipmentHubDemo\EquipmentHubDemo.csproj" />
     <ProjectReference Include="..\EquipmentHubDemo.Domain\EquipmentHubDemo.Domain.csproj" />
   </ItemGroup>
 
