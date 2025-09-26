@@ -1,5 +1,6 @@
 ﻿@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
 @using Microsoft.AspNetCore.Components.Web
+@using System
 @using System.Collections.ObjectModel
 @using System.Threading
 @using LiveChartsCore
@@ -9,9 +10,18 @@
 
 <p class="text-muted small">island points: @Points.Count</p>
 
-<CartesianChart Series="Series"
-                XAxes="xAxes"
-                YAxes="yAxes"/>
+@if (OperatingSystem.IsBrowser())
+{
+    <CartesianChart Series="Series"
+                    XAxes="xAxes"
+                    YAxes="yAxes" />
+}
+else
+{
+    <div data-testid="chart-placeholder" class="alert alert-info">
+        Chart rendering is available in a WebAssembly-enabled environment only.
+    </div>
+}
 
 @code {
     [Parameter] public IReadOnlyList<PointDto> Points { get; set; } = Array.Empty<PointDto>();

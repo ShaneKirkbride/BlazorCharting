@@ -31,8 +31,8 @@ public sealed class ChartIslandTests : TestContext
         var status = cut.Find("p").TextContent.Trim();
         Assert.Equal($"island points: {points.Length}", status);
 
-        var chartElement = cut.Find("cartesianchart");
-        Assert.NotNull(chartElement);
+        var placeholder = cut.Find("[data-testid='chart-placeholder']");
+        Assert.Contains("WebAssembly-enabled", placeholder.TextContent);
 
         var instance = cut.Instance;
 
@@ -47,5 +47,33 @@ public sealed class ChartIslandTests : TestContext
         var axesField = typeof(ChartIsland).GetField("xAxes", BindingFlags.Instance | BindingFlags.NonPublic);
         var axes = Assert.IsAssignableFrom<Axis[]>(axesField?.GetValue(instance));
         Assert.Equal("Telemetry", axes[0].Name);
+    }
+
+    [Fact]
+    public void ChartIsland_ResetsValuesWhenPointsShrink()
+    {
+        // Arrange
+        var baseTime = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var initialPoints = new[]
+        {
+            new PointDto { X = baseTime, Y = 1 },
+        };
+        var cut = RenderComponent<ChartIsland>(parameters => parameters
+            .Add(p => p.Title, "Line A")
+            .Add(p => p.Points, initialPoints));
+
+        var valuesField = typeof(ChartIsland).GetField("_values", BindingFlags.Instance | BindingFlags.NonPublic);
+        var values = Assert.IsAssignableFrom<ObservableCollection<ObservablePoint>>(valuesField?.GetValue(cut.Instance));
+
+        Assert.Equal(initialPoints.Length, values.Count);
+
+        // Act - provide a shorter snapshot for the same title
+        var trimmedPoints = Array.Empty<PointDto>();
+        cut.SetParametersAndRender(parameters => parameters
+            .Add(p => p.Title, "Line A")
+            .Add(p => p.Points, trimmedPoints));
+
+        // Assert
+        Assert.Empty(values);
     }
 }

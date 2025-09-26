@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <RuntimeFrameworkVersion>9.0.9</RuntimeFrameworkVersion>
+    <RollForward>LatestPatch</RollForward>
+  </PropertyGroup>
+</Project>
