@@ -1,5 +1,4 @@
-﻿
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.36221.1 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -8,8 +7,6 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EquipmentHubDemo.Client", "EquipmentHubDemo\EquipmentHubDemo.Client\EquipmentHubDemo.Client.csproj", "{63A5F2B7-0086-479D-804A-0981C957C9D6}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Agent", "EquipmentHubDemo\Agent\Agent.csproj", "{C7AF0E12-968F-8A00-A4DA-D466E8EB2793}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "EquipmentHubDemo/EquipmentHubDemo", "EquipmentHubDemo\EquipmentHubDemo", "{05C5E76E-70FD-46B8-9973-60B036ED9FEE}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "EquipmentHubDemo", "EquipmentHubDemo", "{B5F3CD86-FB89-457D-95F1-2F1295CBE767}"
 EndProject
@@ -45,7 +42,7 @@ Global
 		SolutionGuid = {9763D6CC-1C3B-4016-9725-5E66676D34A2}
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{98413BD3-2707-4985-881C-7B724B20C913} = {05C5E76E-70FD-46B8-9973-60B036ED9FEE}
+                {98413BD3-2707-4985-881C-7B724B20C913} = {B5F3CD86-FB89-457D-95F1-2F1295CBE767}
 		{8EC41560-B252-4FCC-BB74-4F22FD5A7665} = {B5F3CD86-FB89-457D-95F1-2F1295CBE767}
 	EndGlobalSection
 EndGlobal
