@@ -148,26 +148,31 @@
                         continue;
                     }
 
-                    var newPoints = 0;
-                    foreach (var p in batch)
+                    await InvokeAsync(() =>
                     {
-                        _points.Add(p);
-                        _sinceTicks = Math.Max(_sinceTicks, p.X.Ticks);
-                        newPoints++;
-                    }
+                        var newPoints = 0;
+                        foreach (var p in batch)
+                        {
+                            _points.Add(p);
+                            _sinceTicks = Math.Max(_sinceTicks, p.X.Ticks);
+                            newPoints++;
+                        }
 
-                    const int max = 2000;
-                    if (_points.Count > max)
-                    {
-                        var excess = _points.Count - max;
-                        _points.RemoveRange(0, excess);
-                    }
+                        const int max = 2000;
+                        if (_points.Count > max)
+                        {
+                            var excess = _points.Count - max;
+                            _points.RemoveRange(0, excess);
+                        }
 
-                    if (newPoints > 0)
-                    {
+                        if (newPoints == 0)
+                        {
+                            return;
+                        }
+
                         _totalReceived += newPoints;
-                        await InvokeAsync(StateHasChanged);
-                    }
+                        StateHasChanged();
+                    });
                 }
                 catch (OperationCanceledException)
                 {
