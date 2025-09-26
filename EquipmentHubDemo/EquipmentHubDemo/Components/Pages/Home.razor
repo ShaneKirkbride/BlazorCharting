@@ -41,6 +41,8 @@
 
     private CancellationTokenSource? _cts;
     private Task? _pollingTask;
+    private CancellationTokenSource? _keyRefreshCts;
+    private Task? _keyRefreshTask;
 
     private List<PointDto> _points = new();
     private long _totalReceived;
@@ -52,23 +54,14 @@
     {
         try
         {
-            keys = await Http.GetFromJsonAsync<List<string>>(Api("/api/keys")) ?? new();
-            if (keys.Count == 0)
-            {
-                error = "No keys yet. Is the Agent running and the broker/worker receiving data?";
-                return;
-            }
-
-            selectedKey = keys[0];
-            if (running)
-            {
-                await StartPollingAsync();
-            }
+            await TryLoadKeysAsync(initialLoad: true);
         }
         catch (Exception ex)
         {
             error = "Init failed: " + ex.Message;
         }
+
+        EnsureKeyRefreshLoop();
     }
 
     private async Task ToggleAsync()
@@ -211,5 +204,170 @@
     public async ValueTask DisposeAsync()
     {
         await StopPollingAsync();
+        await StopKeyRefreshLoopAsync();
+    }
+
+    private async Task<bool> TryLoadKeysAsync(bool initialLoad)
+    {
+        var latest = await Http.GetFromJsonAsync<List<string>>(Api("/api/keys")) ?? new();
+
+        keys = latest;
+        if (keys.Count == 0)
+        {
+            await StopPollingAsync();
+            error = "Waiting for live data…";
+            _points = new List<PointDto>();
+            _sinceTicks = 0;
+            _totalReceived = 0;
+            StateHasChanged();
+            return false;
+        }
+
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(selectedKey) || !keys.Contains(selectedKey))
+        {
+            selectedKey = keys[0];
+        }
+
+        if (!running)
+        {
+            StateHasChanged();
+            return true;
+        }
+
+        if (initialLoad || _points.Count == 0)
+        {
+            await StartPollingAsync();
+        }
+
+        return true;
+    }
+
+    private void EnsureKeyRefreshLoop()
+    {
+        if (_keyRefreshTask is not null)
+        {
+            return;
+        }
+
+        _keyRefreshCts = new CancellationTokenSource();
+        _keyRefreshTask = RefreshKeysLoopAsync(_keyRefreshCts.Token);
+    }
+
+    private async Task RefreshKeysLoopAsync(CancellationToken ct)
+    {
+        var delay = TimeSpan.FromSeconds(2);
+        var firstIteration = true;
+
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                if (!firstIteration)
+                {
+                    await Task.Delay(delay, ct);
+                }
+                firstIteration = false;
+
+                List<string> latest;
+                try
+                {
+                    latest = await Http.GetFromJsonAsync<List<string>>(Api("/api/keys"), ct) ?? new();
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    await InvokeAsync(() =>
+                    {
+                        error = "Key refresh failed: " + ex.Message;
+                        StateHasChanged();
+                    });
+                    continue;
+                }
+
+                await InvokeAsync(async () =>
+                {
+                    var previousKeys = keys;
+                    var previousSelection = selectedKey;
+                    var hadKeysBefore = previousKeys.Count > 0;
+
+                    keys = latest;
+
+                    if (keys.Count == 0)
+                    {
+                        if (hadKeysBefore)
+                        {
+                            await StopPollingAsync();
+                        }
+
+                        error = "Waiting for live data…";
+                        _points = new List<PointDto>();
+                        _sinceTicks = 0;
+                        _totalReceived = 0;
+                        StateHasChanged();
+                        return;
+                    }
+
+                    error = null;
+
+                    if (string.IsNullOrWhiteSpace(selectedKey) || !keys.Contains(selectedKey))
+                    {
+                        selectedKey = keys[0];
+                    }
+
+                    var selectionChanged = !string.Equals(previousSelection, selectedKey, StringComparison.Ordinal);
+
+                    if (running && (selectionChanged || !hadKeysBefore))
+                    {
+                        await StartPollingAsync();
+                    }
+                    else
+                    {
+                        StateHasChanged();
+                    }
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // loop cancelled -> exit silently
+        }
+        finally
+        {
+            await InvokeAsync(() =>
+            {
+                _keyRefreshTask = null;
+                _keyRefreshCts?.Dispose();
+                _keyRefreshCts = null;
+            });
+        }
+    }
+
+    private async Task StopKeyRefreshLoopAsync()
+    {
+        if (_keyRefreshTask is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _keyRefreshCts?.Cancel();
+            await _keyRefreshTask;
+        }
+        catch (OperationCanceledException)
+        {
+            // expected on cancellation
+        }
+        finally
+        {
+            _keyRefreshCts?.Dispose();
+            _keyRefreshCts = null;
+            _keyRefreshTask = null;
+        }
     }
 }
