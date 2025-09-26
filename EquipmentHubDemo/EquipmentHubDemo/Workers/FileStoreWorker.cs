@@ -17,49 +17,55 @@ public sealed class FilterStoreWorker : BackgroundService
 
     public FilterStoreWorker(IMeasurementRepository repo) => _repo = repo;
 
-    protected override async Task ExecuteAsync(CancellationToken ct)
-    {
-        AsyncIO.ForceDotNet.Force();
-
-        using var sub = new SubscriberSocket();
-        sub.Connect(SubConnect);
-        sub.Subscribe(TopicMeasure);
-
-        using var pub = new PublisherSocket();
-        pub.Connect(PubConnect);
-        NetMQMessage? msg = null;
-        while (!ct.IsCancellationRequested)
-        {
-            if (!sub.TryReceiveMultipartMessage(TimeSpan.FromMilliseconds(100), ref msg) || msg is null || msg.FrameCount < 2)
+    protected override Task ExecuteAsync(CancellationToken ct)
+        => Task.Factory.StartNew(
+            async () =>
             {
-                continue;
-            }
+                AsyncIO.ForceDotNet.Force();
 
-            var payload = msg[1].ConvertToString();
+                using var sub = new SubscriberSocket();
+                sub.Connect(SubConnect);
+                sub.Subscribe(TopicMeasure);
 
-            // 👇 use shared options
-            var m = JsonSerializer.Deserialize<Measurement>(payload, JsonOptions.Default);
-            if (m is null) continue;
+                using var pub = new PublisherSocket();
+                pub.Connect(PubConnect);
+                NetMQMessage? msg = null;
+                while (!ct.IsCancellationRequested)
+                {
+                    if (!sub.TryReceiveMultipartMessage(TimeSpan.FromMilliseconds(100), ref msg) || msg is null || msg.FrameCount < 2)
+                    {
+                        continue;
+                    }
 
-            try
-            {
-                await Task.Delay(200, ct); // demo delay
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
+                    var payload = msg[1].ConvertToString();
 
-            var f = new FilteredMeasurement(m.Key, m.Value, DateTime.UtcNow);
+                    // 👇 use shared options
+                    var m = JsonSerializer.Deserialize<Measurement>(payload, JsonOptions.Default);
+                    if (m is null) continue;
 
-            _repo.AppendHistory(f);
-            _repo.UpsertLatest(f);
+                    try
+                    {
+                        await Task.Delay(200, ct).ConfigureAwait(false); // demo delay
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
 
-            var outJson = JsonSerializer.Serialize(f, JsonOptions.Default);
-            var outMsg = new NetMQMessage(2);
-            outMsg.Append(TopicFiltered);
-            outMsg.Append(outJson);
-            pub.SendMultipartMessage(outMsg);
-        }
-    }
+                    var f = new FilteredMeasurement(m.Key, m.Value, DateTime.UtcNow);
+
+                    _repo.AppendHistory(f);
+                    _repo.UpsertLatest(f);
+
+                    var outJson = JsonSerializer.Serialize(f, JsonOptions.Default);
+                    var outMsg = new NetMQMessage(2);
+                    outMsg.Append(TopicFiltered);
+                    outMsg.Append(outJson);
+                    pub.SendMultipartMessage(outMsg);
+                }
+            },
+            ct,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default)
+            .Unwrap();
 }
