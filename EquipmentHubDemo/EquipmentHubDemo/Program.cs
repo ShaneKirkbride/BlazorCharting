@@ -3,6 +3,7 @@ using EquipmentHubDemo.Domain;
 using EquipmentHubDemo.Infrastructure;
 using EquipmentHubDemo.Live;
 using EquipmentHubDemo.Workers;
+using EquipmentHubDemo.Components.Pages;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -68,6 +69,11 @@ app.MapGet("/favicon.ico", () => Results.Redirect("/favicon.png"));
 // ---------- Razor Components endpoints ----------
 app.MapRazorComponents<App>()
    .AddInteractiveServerRenderMode()
-   .AddInteractiveWebAssemblyRenderMode();
+   .AddInteractiveWebAssemblyRenderMode()
+   .AddAdditionalAssemblies(typeof(Home).Assembly);
+
+// Ensure requests to the site root are served the Blazor bootstrapper
+// so the router can activate the Home page instead of returning 404.
+app.MapFallbackToFile("index.html");
 
 app.Run();
