@@ -7,6 +7,7 @@ using EquipmentHubDemo.Infrastructure;
 using EquipmentHubDemo.Live;
 using EquipmentHubDemo.Workers;
 using EquipmentHubDemo.Components.Pages;
+using Microsoft.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +25,21 @@ builder.Services.Configure<ApiClientOptions>(options =>
     builder.Configuration.GetSection(ApiClientOptions.SectionName).Bind(options));
 builder.Services.AddScoped<IApiBaseUriProvider, ApiBaseUriProvider>();
 builder.Services.AddScoped<ILiveMeasurementClient, HttpLiveMeasurementClient>();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("DevClient", policy =>
+    {
+        policy.WithOrigins(
+                "http://127.0.0.1:65061",
+                "https://localhost:7118",
+                "http://localhost:5026")
+            .WithMethods("GET")
+            .WithHeaders(
+                HeaderNames.Accept,
+                HeaderNames.ContentType);
+    });
+});
 
 // Infra + services
 builder.Services.AddSingleton<IMeasurementRepository>(sp =>
@@ -48,6 +64,8 @@ app.MapStaticAssets();
 
 // Antiforgery middleware must be in the pipeline
 app.UseAntiforgery();
+
+app.UseCors("DevClient");
 
 // ---------- Minimal read APIs for WASM UI ----------
 app.MapGet("/api/keys", (ILiveCache cache) =>
