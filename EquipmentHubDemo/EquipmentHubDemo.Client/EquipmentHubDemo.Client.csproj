@@ -4,7 +4,6 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
     <StaticWebAssetProjectMode>Default</StaticWebAssetProjectMode>
   </PropertyGroup>
 
@@ -15,5 +14,48 @@
   <ItemGroup>
     <ProjectReference Include="..\EquipmentHubDemo.Components\EquipmentHubDemo.Components.csproj" />
   </ItemGroup>
+
+  <PropertyGroup>
+    <_WasmRuntimeFrameworkVersion Condition="'$(RuntimeFrameworkVersion)' != ''">$(RuntimeFrameworkVersion)</_WasmRuntimeFrameworkVersion>
+    <_WasmRuntimeFrameworkVersion Condition="'$(_WasmRuntimeFrameworkVersion)' == ''">9.0.0</_WasmRuntimeFrameworkVersion>
+  </PropertyGroup>
+
+  <Target Name="GenerateWasmRuntimeConfig" AfterTargets="Build">
+    <ItemGroup>
+      <_WasmRuntimeConfigLines Include="{" />
+      <_WasmRuntimeConfigLines Include="  &quot;runtimeOptions&quot;: {" />
+      <_WasmRuntimeConfigLines Include="    &quot;tfm&quot;: &quot;net9.0&quot;," />
+      <_WasmRuntimeConfigLines Include="    &quot;rollForward&quot;: &quot;LatestMajor&quot;," />
+      <_WasmRuntimeConfigLines Include="    &quot;frameworks&quot;: [" />
+      <_WasmRuntimeConfigLines Include="      {" />
+      <_WasmRuntimeConfigLines Include="        &quot;name&quot;: &quot;Microsoft.NETCore.App&quot;," />
+      <_WasmRuntimeConfigLines Include="        &quot;version&quot;: &quot;$(_WasmRuntimeFrameworkVersion)&quot;" />
+      <_WasmRuntimeConfigLines Include="      }," />
+      <_WasmRuntimeConfigLines Include="      {" />
+      <_WasmRuntimeConfigLines Include="        &quot;name&quot;: &quot;Microsoft.AspNetCore.App&quot;," />
+      <_WasmRuntimeConfigLines Include="        &quot;version&quot;: &quot;$(_WasmRuntimeFrameworkVersion)&quot;" />
+      <_WasmRuntimeConfigLines Include="      }" />
+      <_WasmRuntimeConfigLines Include="    ]," />
+      <_WasmRuntimeConfigLines Include="    &quot;configProperties&quot;: {" />
+      <_WasmRuntimeConfigLines Include="      &quot;System.GC.Server&quot;: false," />
+      <_WasmRuntimeConfigLines Include="      &quot;System.Reflection.Metadata.MetadataUpdater.IsSupported&quot;: false," />
+      <_WasmRuntimeConfigLines Include="      &quot;System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization&quot;: false" />
+      <_WasmRuntimeConfigLines Include="    }," />
+      <_WasmRuntimeConfigLines Include="    &quot;wasmHostProperties&quot;: {" />
+      <_WasmRuntimeConfigLines Include="      &quot;perHostConfig&quot;: [" />
+      <_WasmRuntimeConfigLines Include="        {" />
+      <_WasmRuntimeConfigLines Include="          &quot;name&quot;: &quot;browser&quot;," />
+      <_WasmRuntimeConfigLines Include="          &quot;host&quot;: &quot;browser&quot;" />
+      <_WasmRuntimeConfigLines Include="        }" />
+      <_WasmRuntimeConfigLines Include="      ]" />
+      <_WasmRuntimeConfigLines Include="    }" />
+      <_WasmRuntimeConfigLines Include="  }" />
+      <_WasmRuntimeConfigLines Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(OutputPath)$(AssemblyName).runtimeconfig.json"
+                      Lines="@(_WasmRuntimeConfigLines)"
+                      Overwrite="true"
+                      Encoding="utf-8" />
+  </Target>
 
 </Project>
