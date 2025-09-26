@@ -58,6 +58,19 @@ else
 
     protected override void OnParametersSet()
     {
+        if (Points is null)
+        {
+            throw new ArgumentNullException(nameof(Points));
+        }
+
+        for (var i = 0; i < Points.Count; i++)
+        {
+            if (Points[i] is null)
+            {
+                throw new ArgumentException("Points cannot contain null entries.", nameof(Points));
+            }
+        }
+
         // If the selected series/key changed, reset the collection once.
         if (_lastKeyOrTitle != Title)
         {
