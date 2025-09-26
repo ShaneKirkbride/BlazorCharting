@@ -5,8 +5,6 @@ using System.Text.Json;
 using System.Threading;
 using EquipmentHubDemo.Domain;
 using EquipmentHubDemo.Domain.Live;
-using Microsoft.AspNetCore.Components;
-using Microsoft.Extensions.Options;
 
 namespace EquipmentHubDemo.Client.Services;
 
@@ -21,65 +19,15 @@ public sealed class HttpLiveMeasurementClient : ILiveMeasurementClient
     };
 
     private readonly HttpClient _httpClient;
-    private readonly IReadOnlyList<Uri> _candidateBaseUris;
+    private readonly IApiBaseUriProvider _baseUriProvider;
     private Uri? _preferredBaseUri;
 
     public HttpLiveMeasurementClient(
         HttpClient httpClient,
-        IOptions<ApiClientOptions> options,
-        NavigationManager navigationManager)
+        IApiBaseUriProvider baseUriProvider)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        ArgumentNullException.ThrowIfNull(navigationManager);
-
-        var unique = new List<Uri>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        void TryAdd(Uri? candidate)
-        {
-            if (candidate is null)
-            {
-                return;
-            }
-
-            var normalized = EnsureTrailingSlash(candidate.AbsoluteUri);
-            if (seen.Add(normalized))
-            {
-                unique.Add(new Uri(normalized, UriKind.Absolute));
-            }
-        }
-
-        if (options?.Value?.BaseAddresses is { Count: > 0 } configured)
-        {
-            foreach (var address in configured)
-            {
-                if (Uri.TryCreate(address, UriKind.Absolute, out var uri))
-                {
-                    TryAdd(uri);
-                }
-            }
-        }
-
-        if (unique.Count == 0)
-        {
-            if (Uri.TryCreate(navigationManager.BaseUri, UriKind.Absolute, out var navBase))
-            {
-                TryAdd(navBase);
-            }
-            else if (httpClient.BaseAddress is not null)
-            {
-                TryAdd(httpClient.BaseAddress);
-            }
-        }
-
-        if (unique.Count == 0)
-        {
-            throw new ArgumentException(
-                "No valid API base addresses were configured for the live measurement client.",
-                nameof(options));
-        }
-
-        _candidateBaseUris = unique;
+        _baseUriProvider = baseUriProvider ?? throw new ArgumentNullException(nameof(baseUriProvider));
     }
 
     public async Task<IReadOnlyList<string>> GetAvailableKeysAsync(CancellationToken cancellationToken = default)
@@ -161,7 +109,7 @@ public sealed class HttpLiveMeasurementClient : ILiveMeasurementClient
             yield return preferred;
         }
 
-        foreach (var candidate in _candidateBaseUris)
+        foreach (var candidate in _baseUriProvider.GetBaseUris())
         {
             if (visited.Add(candidate.AbsoluteUri))
             {
@@ -216,13 +164,4 @@ public sealed class HttpLiveMeasurementClient : ILiveMeasurementClient
         return builder.ToString();
     }
 
-    private static string EnsureTrailingSlash(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return value;
-        }
-
-        return value.EndsWith("/", StringComparison.Ordinal) ? value : value + "/";
-    }
 }

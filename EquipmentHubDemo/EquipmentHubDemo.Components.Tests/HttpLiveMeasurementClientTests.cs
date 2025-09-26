@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -7,8 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using EquipmentHubDemo.Client.Services;
 using EquipmentHubDemo.Domain.Live;
-using Microsoft.AspNetCore.Components;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace EquipmentHubDemo.Components.Tests;
@@ -34,13 +33,11 @@ public sealed class HttpLiveMeasurementClientTests
             });
 
         var httpClient = new HttpClient(handler);
-        var options = Options.Create(new ApiClientOptions
-        {
-            BaseAddresses = new List<string> { "https://client", "https://server" }
-        });
-        var navigation = new TestNavigationManager("https://client/");
+        var provider = new TestApiBaseUriProvider(
+            "https://client/",
+            "https://server/");
 
-        var client = new HttpLiveMeasurementClient(httpClient, options, navigation);
+        var client = new HttpLiveMeasurementClient(httpClient, provider);
 
         // Act
         var keys = await client.GetAvailableKeysAsync();
@@ -65,13 +62,9 @@ public sealed class HttpLiveMeasurementClientTests
             });
 
         var httpClient = new HttpClient(handler);
-        var options = Options.Create(new ApiClientOptions
-        {
-            BaseAddresses = new List<string> { "https://client" }
-        });
-        var navigation = new TestNavigationManager("https://client/");
+        var provider = new TestApiBaseUriProvider("https://client/");
 
-        var client = new HttpLiveMeasurementClient(httpClient, options, navigation);
+        var client = new HttpLiveMeasurementClient(httpClient, provider);
 
         // Act
         var ex = await Assert.ThrowsAsync<LiveMeasurementClientException>(() => client.GetAvailableKeysAsync());
@@ -97,13 +90,9 @@ public sealed class HttpLiveMeasurementClientTests
             });
 
         var httpClient = new HttpClient(handler);
-        var options = Options.Create(new ApiClientOptions
-        {
-            BaseAddresses = new List<string> { "https://server" }
-        });
-        var navigation = new TestNavigationManager("https://server/");
+        var provider = new TestApiBaseUriProvider("https://server/");
 
-        var client = new HttpLiveMeasurementClient(httpClient, options, navigation);
+        var client = new HttpLiveMeasurementClient(httpClient, provider);
 
         // Act
         var points = await client.GetMeasurementsAsync("Line A", 0);
@@ -112,19 +101,6 @@ public sealed class HttpLiveMeasurementClientTests
         var point = Assert.Single(points);
         Assert.Equal(2.5, point.Y);
         Assert.Equal(new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc), point.X);
-    }
-
-    private sealed class TestNavigationManager : NavigationManager
-    {
-        public TestNavigationManager(string baseUri)
-        {
-            Initialize(baseUri, baseUri);
-        }
-
-        protected override void NavigateToCore(string uri, bool forceLoad)
-        {
-            // Navigation is not required for tests.
-        }
     }
 
     private sealed class SequenceMessageHandler : HttpMessageHandler
@@ -169,5 +145,20 @@ public sealed class HttpLiveMeasurementClientTests
 
             return new Uri(value, UriKind.Absolute).AbsoluteUri;
         }
+    }
+
+    private sealed class TestApiBaseUriProvider : IApiBaseUriProvider
+    {
+        private readonly IReadOnlyList<Uri> _uris;
+
+        public TestApiBaseUriProvider(params string[] absoluteUris)
+        {
+            _uris = absoluteUris
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .Select(u => new Uri(u, UriKind.Absolute))
+                .ToList();
+        }
+
+        public IReadOnlyList<Uri> GetBaseUris() => _uris;
     }
 }
