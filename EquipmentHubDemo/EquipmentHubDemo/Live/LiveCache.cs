@@ -71,32 +71,36 @@ public sealed class LiveSubscriberWorker : BackgroundService
     public LiveSubscriberWorker(ILiveCache cache) => _cache = cache;
 
     protected override Task ExecuteAsync(CancellationToken ct)
-    {
-        AsyncIO.ForceDotNet.Force();
-
-        using var sub = new SubscriberSocket();
-        sub.Connect(SubConnect);
-        sub.Subscribe(TopicFiltered);
-        NetMQMessage? msg = null;
-
-        while (!ct.IsCancellationRequested)
-        {
-            if (!sub.TryReceiveMultipartMessage(TimeSpan.FromMilliseconds(100), ref msg) || msg is null || msg.FrameCount < 2)
+        => Task.Factory.StartNew(
+            () =>
             {
-                continue;
-            }
+                AsyncIO.ForceDotNet.Force();
 
-            var json = msg[1].ConvertToString();
+                using var sub = new SubscriberSocket();
+                sub.Connect(SubConnect);
+                sub.Subscribe(TopicFiltered);
+                NetMQMessage? msg = null;
 
-            // 👇 use shared options
-            var f = JsonSerializer.Deserialize<FilteredMeasurement>(json, JsonOptions.Default);
-            if (f is null) continue;
+                while (!ct.IsCancellationRequested)
+                {
+                    if (!sub.TryReceiveMultipartMessage(TimeSpan.FromMilliseconds(100), ref msg) || msg is null || msg.FrameCount < 2)
+                    {
+                        continue;
+                    }
 
-            _cache.Push(f.Key.ToString(), f.TimestampUtc, f.Value);
+                    var json = msg[1].ConvertToString();
 
-            // Optional debug:
-            Console.WriteLine($"filtered {f.Key} {f.Value:F2} @ {f.TimestampUtc:HH:mm:ss}");
-        }
-        return Task.CompletedTask;
-    }
+                    // 👇 use shared options
+                    var f = JsonSerializer.Deserialize<FilteredMeasurement>(json, JsonOptions.Default);
+                    if (f is null) continue;
+
+                    _cache.Push(f.Key.ToString(), f.TimestampUtc, f.Value);
+
+                    // Optional debug:
+                    Console.WriteLine($"filtered {f.Key} {f.Value:F2} @ {f.TimestampUtc:HH:mm:ss}");
+                }
+            },
+            ct,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
 }
