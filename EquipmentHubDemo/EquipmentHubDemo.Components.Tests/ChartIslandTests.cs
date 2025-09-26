@@ -1,8 +1,10 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Reflection;
 using Bunit;
 using EquipmentHubDemo.Components.Pages;
 using EquipmentHubDemo.Domain;
+using LiveChartsCore;
 using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
 using Xunit;
@@ -14,6 +16,7 @@ public sealed class ChartIslandTests : TestContext
     [Fact]
     public void ChartIsland_RendersCartesianChartAndTracksIncomingPoints()
     {
+        ResetConfigurationFlag();
         // Arrange
         var baseTime = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
         var points = new[]
@@ -47,11 +50,15 @@ public sealed class ChartIslandTests : TestContext
         var axesField = typeof(ChartIsland).GetField("xAxes", BindingFlags.Instance | BindingFlags.NonPublic);
         var axes = Assert.IsAssignableFrom<Axis[]>(axesField?.GetValue(instance));
         Assert.Equal("Telemetry", axes[0].Name);
+
+        var configuredFlag = GetConfigurationFlag();
+        Assert.Equal(1, configuredFlag);
     }
 
     [Fact]
     public void ChartIsland_ResetsValuesWhenPointsShrink()
     {
+        ResetConfigurationFlag();
         // Arrange
         var baseTime = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
         var initialPoints = new[]
@@ -75,5 +82,75 @@ public sealed class ChartIslandTests : TestContext
 
         // Assert
         Assert.Empty(values);
+    }
+
+    [Fact]
+    public void ChartIsland_InitializesLineSeriesWithLiveCharts()
+    {
+        ResetConfigurationFlag();
+
+        var cut = RenderComponent<ChartIsland>(parameters => parameters
+            .Add(p => p.Title, "Line B")
+            .Add(p => p.Points, Array.Empty<PointDto>()));
+
+        var valuesField = typeof(ChartIsland).GetField("_values", BindingFlags.Instance | BindingFlags.NonPublic);
+        var values = Assert.IsAssignableFrom<ObservableCollection<ObservablePoint>>(valuesField?.GetValue(cut.Instance));
+
+        var seriesField = typeof(ChartIsland).GetField("Series", BindingFlags.Instance | BindingFlags.NonPublic);
+        var series = Assert.IsAssignableFrom<ISeries[]>(seriesField?.GetValue(cut.Instance));
+        var lineSeries = Assert.IsType<LineSeries<ObservablePoint>>(Assert.Single(series));
+
+        Assert.Same(values, lineSeries.Values);
+        Assert.Null(lineSeries.GeometryFill);
+        Assert.Null(lineSeries.GeometryStroke);
+        Assert.Equal(0, lineSeries.LineSmoothness);
+
+        var configuredFlag = GetConfigurationFlag();
+        Assert.Equal(1, configuredFlag);
+    }
+
+    [Fact]
+    public void ChartIsland_ThrowsWhenPointsParameterIsNull()
+    {
+        ResetConfigurationFlag();
+
+        var exception = Assert.Throws<ArgumentNullException>(() =>
+            RenderComponent<ChartIsland>(parameters => parameters
+                .Add(p => p.Title, "Line C")
+                .Add(p => p.Points, null)));
+
+        Assert.Equal("Points", exception.ParamName);
+    }
+
+    [Fact]
+    public void ChartIsland_ThrowsWhenPointsContainNullEntries()
+    {
+        ResetConfigurationFlag();
+
+        PointDto?[] points =
+        {
+            new PointDto { X = DateTime.UtcNow, Y = 1 },
+            null
+        };
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            RenderComponent<ChartIsland>(parameters => parameters
+                .Add(p => p.Title, "Line D")
+                .Add(p => p.Points, points!)));
+
+        Assert.Equal("Points", exception.ParamName);
+        Assert.Contains("null entries", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int GetConfigurationFlag()
+    {
+        var field = typeof(ChartIsland).GetField("_configuredFlag", BindingFlags.Static | BindingFlags.NonPublic);
+        return (int)(field?.GetValue(null) ?? 0);
+    }
+
+    private static void ResetConfigurationFlag()
+    {
+        var field = typeof(ChartIsland).GetField("_configuredFlag", BindingFlags.Static | BindingFlags.NonPublic);
+        field?.SetValue(null, 0);
     }
 }
