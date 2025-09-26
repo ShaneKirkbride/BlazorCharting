@@ -1,0 +1,80 @@
+﻿@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using Microsoft.AspNetCore.Components.Web
+@using System.Collections.ObjectModel
+@using LiveChartsCore
+@using LiveChartsCore.Defaults
+@using LiveChartsCore.SkiaSharpView
+@using LiveChartsCore.SkiaSharpView.Blazor
+
+<p class="text-muted small">island points: @Points.Count</p>
+
+<CartesianChart Series="Series"
+                XAxes="xAxes"
+                YAxes="yAxes"/>
+
+@code {
+    [Parameter] public IReadOnlyList<PointDto> Points { get; set; } = Array.Empty<PointDto>();
+    [Parameter] public string? Title { get; set; }
+
+    private static bool _configured;
+
+    private readonly ObservableCollection<ObservablePoint> _values = new();
+    private readonly Axis[] xAxes = { new Axis { Name = "Time", Labeler = v => DateTime.FromOADate(v).ToString("HH:mm:ss") } };
+    private readonly Axis[] yAxes = { new Axis { Name = "Value" } };
+    private ISeries[] Series = Array.Empty<ISeries>();
+
+    private string? _lastKeyOrTitle;
+    private int _lastAppliedCount;
+
+    protected override void OnInitialized()
+    {
+        if (!_configured)
+        {
+            LiveCharts.Configure(cfg => cfg.AddSkiaSharp()); // must happen in WASM context
+            _configured = true;
+        }
+
+        Series = new ISeries[]
+        {
+            new LineSeries<ObservablePoint>
+            {
+                Values = _values,
+                GeometryFill = null,
+                GeometryStroke = null,
+                LineSmoothness = 0
+            }
+        };
+    }
+
+    protected override void OnParametersSet()
+    {
+        // If the selected series/key changed, reset the collection once.
+        if (_lastKeyOrTitle != Title)
+        {
+            _values.Clear();
+            _lastAppliedCount = 0;
+            _lastKeyOrTitle = Title;
+        }
+
+        // If server snapshot shrank (e.g., TTL or selection), resync once.
+        if (Points.Count < _lastAppliedCount)
+        {
+            _values.Clear();
+            _lastAppliedCount = 0;
+        }
+
+        // Append only new points (avoid tearing down chart every tick)
+        for (int i = _lastAppliedCount; i < Points.Count; i++)
+        {
+            var p = Points[i];
+            _values.Add(new ObservablePoint(p.X.ToOADate(), p.Y));
+        }
+        _lastAppliedCount = Points.Count;
+
+        // Keep a hard cap (optional; aligns with server cap)
+        const int max = 2000;
+        while (_values.Count > max) _values.RemoveAt(0);
+
+        xAxes[0].Name = string.IsNullOrWhiteSpace(Title) ? "Time" : Title!;
+    }
+}

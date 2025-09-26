@@ -1,0 +1,153 @@
+﻿@page "/"
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@namespace EquipmentHubDemo.Components.Pages
+
+@using System.Collections.ObjectModel
+@using LiveChartsCore
+@using LiveChartsCore.Defaults
+@using LiveChartsCore.SkiaSharpView
+@using LiveChartsCore.SkiaSharpView.Blazor
+
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<h3>Live Measurements</h3>
+<p class="text-muted">Agent → Broker → Filter/Store → Live cache → (WASM UI)</p>
+
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<select value="@selectedKey" @onchange="OnSelectedChanged" class="form-select form-select-sm" style="max-width:460px;">
+    @foreach (var k in keys)
+    {
+        <option value="@k">@k</option>
+    }
+</select>
+
+<button class="btn btn-sm btn-primary ms-2" @onclick="Toggle">@((running ? "Pause" : "Run"))</button>
+
+<p class="text-muted small mt-2">points: @_values.Count</p>
+
+<CartesianChart Series="Series"
+                XAxes="xAxes"
+                YAxes="yAxes"
+                Width="900"
+                Height="360" />
+
+@code {
+    private string? error;
+
+    private List<string> keys = new();
+    private string? selectedKey;
+    private bool running = true;
+
+    private readonly ObservableCollection<ObservablePoint> _values = new();
+    private ISeries[] Series = Array.Empty<ISeries>();
+    private readonly Axis[] xAxes = { new Axis { Name = "Time", Labeler = v => DateTime.FromOADate(v).ToString("HH:mm:ss") } };
+    private readonly Axis[] yAxes = { new Axis { Name = "Value" } };
+
+    private long _sinceTicks;
+    private CancellationTokenSource? _cts;
+
+    private string Api(string relative) => Nav.ToAbsoluteUri(relative).ToString();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            LiveCharts.Configure(cfg => cfg.AddSkiaSharp());
+
+            Series = new ISeries[]
+            {
+                new LineSeries<ObservablePoint>
+                {
+                    Values = _values,
+                    GeometryFill = null,
+                    GeometryStroke = null,
+                    LineSmoothness = 0
+                }
+            };
+
+            keys = await Http.GetFromJsonAsync<List<string>>(Api("/api/keys")) ?? new();
+            if (keys.Count == 0)
+            {
+                error = "No keys yet. Is the Agent running and the broker/worker receiving data?";
+                return;
+            }
+
+            selectedKey = keys[0];
+            StartPolling();
+        }
+        catch (Exception ex)
+        {
+            error = "Init failed: " + ex.Message;
+        }
+    }
+
+    private void Toggle()
+    {
+        running = !running;
+        if (running) StartPolling(); else StopPolling();
+    }
+
+    private void StartPolling()
+    {
+        StopPolling();
+        if (string.IsNullOrWhiteSpace(selectedKey)) return;
+
+        _values.Clear();
+        _sinceTicks = 0;
+        _cts = new CancellationTokenSource();
+        _ = PollLoopAsync(selectedKey, _cts.Token);
+    }
+
+    private void StopPolling()
+    {
+        _cts?.Cancel();
+        _cts = null;
+    }
+
+    private async Task PollLoopAsync(string key, CancellationToken ct)
+    {
+        var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250)); // ~4 FPS
+        while (await timer.WaitForNextTickAsync(ct))
+        {
+            if (!running) continue;
+
+            try
+            {
+                var url = Api($"/api/live?key={Uri.EscapeDataString(key)}&sinceTicks={_sinceTicks}");
+                var batch = await Http.GetFromJsonAsync<List<PointDto>>(url, new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (batch is null || batch.Count == 0) continue;
+
+                foreach (var p in batch)
+                {
+                    _values.Add(new ObservablePoint(p.X.ToOADate(), p.Y));
+                    _sinceTicks = Math.Max(_sinceTicks, p.X.Ticks);
+                }
+
+                while (_values.Count > 2000) _values.RemoveAt(0);
+            }
+            catch (Exception ex)
+            {
+                error ??= "Polling error: " + ex.Message;
+            }
+        }
+    }
+
+    private Task OnSelectedChanged(ChangeEventArgs e)
+    {
+        selectedKey = e.Value?.ToString();
+        StartPolling();
+        return Task.CompletedTask;
+    }
+
+    public sealed class PointDto { public DateTime X { get; set; } public double Y { get; set; } }
+}
