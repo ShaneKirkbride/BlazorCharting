@@ -7,6 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="wwwroot\**" />
+    <Content Remove="wwwroot\**" />
+    <EmbeddedResource Remove="wwwroot\**" />
+    <None Remove="wwwroot\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\EquipmentHubDemo.Client\EquipmentHubDemo.Client.csproj" />
     <ProjectReference Include="..\EquipmentHubDemo.Components\EquipmentHubDemo.Components.csproj" />
     <ProjectReference Include="..\EquipmentHubDemo.Domain\EquipmentHubDemo.Domain.csproj" />

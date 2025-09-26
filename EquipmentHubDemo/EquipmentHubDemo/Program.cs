@@ -74,6 +74,6 @@ app.MapRazorComponents<App>()
 
 // Ensure requests to the site root are served the Blazor bootstrapper
 // so the router can activate the Home page instead of returning 404.
-app.MapFallbackToFile("index.html");
+// app.MapFallbackToFile("apphost.html");
 
 app.Run();
