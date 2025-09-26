@@ -1,14 +1,8 @@
-﻿@page "/"
+@page "/"
 @using Microsoft.AspNetCore.Components.Web
+@implements IAsyncDisposable
 @rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
 @namespace EquipmentHubDemo.Components.Pages
-
-@using System.Collections.ObjectModel
-@using System.Threading
-@using LiveChartsCore
-@using LiveChartsCore.Defaults
-@using LiveChartsCore.SkiaSharpView
-@using LiveChartsCore.SkiaSharpView.Blazor
 
 @inject HttpClient Http
 @inject NavigationManager Nav
@@ -28,18 +22,15 @@
     }
 </select>
 
-<button class="btn btn-sm btn-primary ms-2" @onclick="Toggle">@((running ? "Pause" : "Run"))</button>
+<button class="btn btn-sm btn-primary ms-2" @onclick="ToggleAsync">@((running ? "Pause" : "Run"))</button>
 
 <div class="d-flex flex-wrap align-items-center gap-3 mt-2">
     <span class="badge bg-primary text-wrap">Measurements received: @_totalReceived</span>
-    <span class="text-muted small">Active buffer: @_values.Count</span>
+    <span class="text-muted small">Active buffer: @_points.Count</span>
 </div>
 
-<CartesianChart Series="Series"
-                XAxes="xAxes"
-                YAxes="yAxes"
-                Width="900"
-                Height="360" />
+<ChartIsland Points="_points"
+             Title="selectedKey" />
 
 @code {
     private string? error;
@@ -48,16 +39,12 @@
     private string? selectedKey;
     private bool running = true;
 
-    private static int _chartsConfiguredFlag;
-
-    private readonly ObservableCollection<ObservablePoint> _values = new();
-    private long _totalReceived;
-    private ISeries[] Series = Array.Empty<ISeries>();
-    private readonly Axis[] xAxes = { new Axis { Name = "Time", Labeler = v => DateTime.FromOADate(v).ToString("HH:mm:ss") } };
-    private readonly Axis[] yAxes = { new Axis { Name = "Value" } };
-
-    private long _sinceTicks;
     private CancellationTokenSource? _cts;
+    private Task? _pollingTask;
+
+    private List<PointDto> _points = new();
+    private long _totalReceived;
+    private long _sinceTicks;
 
     private string Api(string relative) => Nav.ToAbsoluteUri(relative).ToString();
 
@@ -65,22 +52,6 @@
     {
         try
         {
-            if (Interlocked.Exchange(ref _chartsConfiguredFlag, 1) == 0)
-            {
-                LiveCharts.Configure(cfg => cfg.AddSkiaSharp());
-            }
-
-            Series = new ISeries[]
-            {
-                new LineSeries<ObservablePoint>
-                {
-                    Values = _values,
-                    GeometryFill = null,
-                    GeometryStroke = null,
-                    LineSmoothness = 0
-                }
-            };
-
             keys = await Http.GetFromJsonAsync<List<string>>(Api("/api/keys")) ?? new();
             if (keys.Count == 0)
             {
@@ -89,7 +60,10 @@
             }
 
             selectedKey = keys[0];
-            StartPolling();
+            if (running)
+            {
+                await StartPollingAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -97,76 +71,145 @@
         }
     }
 
-    private void Toggle()
+    private async Task ToggleAsync()
     {
         running = !running;
-        if (running) StartPolling(); else StopPolling();
+        if (running)
+        {
+            await StartPollingAsync();
+        }
+        else
+        {
+            await StopPollingAsync();
+        }
     }
 
-    private void StartPolling()
+    private async Task StartPollingAsync()
     {
-        StopPolling();
-        if (string.IsNullOrWhiteSpace(selectedKey)) return;
+        var key = selectedKey;
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
 
-        _values.Clear();
+        await StopPollingAsync();
+
+        _points = new List<PointDto>();
         _sinceTicks = 0;
         _totalReceived = 0;
+
         _cts = new CancellationTokenSource();
-        _ = PollLoopAsync(selectedKey, _cts.Token);
+        _pollingTask = PollLoopAsync(key, _cts.Token);
+        await InvokeAsync(StateHasChanged);
     }
 
-    private void StopPolling()
+    private async Task StopPollingAsync()
     {
-        _cts?.Cancel();
-        _cts = null;
-    }
-
-    private async Task PollLoopAsync(string key, CancellationToken ct)
-    {
-        var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250)); // ~4 FPS
-        while (await timer.WaitForNextTickAsync(ct))
+        if (_cts is null)
         {
-            if (!running) continue;
+            return;
+        }
 
+        _cts.Cancel();
+        var toAwait = _pollingTask;
+        _pollingTask = null;
+
+        _cts.Dispose();
+        _cts = null;
+
+        if (toAwait is not null)
+        {
             try
             {
-                var url = Api($"/api/live?key={Uri.EscapeDataString(key)}&sinceTicks={_sinceTicks}");
-                var batch = await Http.GetFromJsonAsync<List<PointDto>>(url, new System.Text.Json.JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-
-                if (batch is null || batch.Count == 0) continue;
-
-                var newPoints = 0;
-                foreach (var p in batch)
-                {
-                    _values.Add(new ObservablePoint(p.X.ToOADate(), p.Y));
-                    _sinceTicks = Math.Max(_sinceTicks, p.X.Ticks);
-                    newPoints++;
-                }
-
-                while (_values.Count > 2000) _values.RemoveAt(0);
-
-                if (newPoints > 0)
-                {
-                    _totalReceived += newPoints;
-                    await InvokeAsync(StateHasChanged);
-                }
+                await toAwait;
             }
-            catch (Exception ex)
+            catch (OperationCanceledException)
             {
-                error ??= "Polling error: " + ex.Message;
+                // expected when stopping
             }
         }
     }
 
-    private Task OnSelectedChanged(ChangeEventArgs e)
+    private async Task PollLoopAsync(string key, CancellationToken ct)
     {
-        selectedKey = e.Value?.ToString();
-        StartPolling();
-        return Task.CompletedTask;
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                if (!running)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var url = Api($"/api/live?key={Uri.EscapeDataString(key)}&sinceTicks={_sinceTicks}");
+                    var batch = await Http.GetFromJsonAsync<List<PointDto>>(url, new System.Text.Json.JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+
+                    if (batch is null || batch.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    var newPoints = 0;
+                    foreach (var p in batch)
+                    {
+                        _points.Add(p);
+                        _sinceTicks = Math.Max(_sinceTicks, p.X.Ticks);
+                        newPoints++;
+                    }
+
+                    const int max = 2000;
+                    if (_points.Count > max)
+                    {
+                        var excess = _points.Count - max;
+                        _points.RemoveRange(0, excess);
+                    }
+
+                    if (newPoints > 0)
+                    {
+                        _totalReceived += newPoints;
+                        await InvokeAsync(StateHasChanged);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    error ??= "Polling error: " + ex.Message;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // loop cancelled -> exit silently
+        }
     }
 
-    public sealed class PointDto { public DateTime X { get; set; } public double Y { get; set; } }
+    private async Task OnSelectedChanged(ChangeEventArgs e)
+    {
+        selectedKey = e.Value?.ToString();
+        if (running)
+        {
+            await StartPollingAsync();
+        }
+        else
+        {
+            _points = new List<PointDto>();
+            _sinceTicks = 0;
+            _totalReceived = 0;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopPollingAsync();
+    }
 }
