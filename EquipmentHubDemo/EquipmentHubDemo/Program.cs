@@ -22,7 +22,9 @@ builder.Services.AddSingleton<IMeasurementRepository>(sp =>
     new LiteDbMeasurementRepository(
         Path.Combine(builder.Environment.ContentRootPath, "data", "measurements.db")));
 
-builder.Services.AddSingleton<LiveCache>();
+builder.Services.Configure<LiveCacheOptions>(builder.Configuration.GetSection(LiveCacheOptions.SectionName));
+builder.Services.Configure<TtlWorkerOptions>(builder.Configuration.GetSection(TtlWorkerOptions.SectionName));
+builder.Services.AddSingleton<ILiveCache, LiveCache>();
 
 // Background services (broker + workers)
 builder.Services.AddHostedService<ZmqBrokerService>();
@@ -40,13 +42,13 @@ app.MapStaticAssets();
 app.UseAntiforgery();
 
 // ---------- Minimal read APIs for WASM UI ----------
-app.MapGet("/api/keys", (LiveCache cache) =>
+app.MapGet("/api/keys", (ILiveCache cache) =>
 {
     // returns: ["UXG-01:Power", "UXG-02:SNR", ...]
     return Results.Json(cache.Keys);
 });
 
-app.MapGet("/api/live", (string key, long? sinceTicks, LiveCache cache) =>
+app.MapGet("/api/live", (string key, long? sinceTicks, ILiveCache cache) =>
 {
     // returns: [{ x: "2025-09-25T19:20:31Z", y: 11.2 }, ...]
     var pts = cache.GetSeries(key);

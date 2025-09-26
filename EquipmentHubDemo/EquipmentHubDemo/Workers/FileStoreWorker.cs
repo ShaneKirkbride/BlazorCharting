@@ -17,7 +17,7 @@ public sealed class FilterStoreWorker : BackgroundService
 
     public FilterStoreWorker(IMeasurementRepository repo) => _repo = repo;
 
-    protected override Task ExecuteAsync(CancellationToken ct) => Task.Run(async () =>
+    protected override async Task ExecuteAsync(CancellationToken ct)
     {
         AsyncIO.ForceDotNet.Force();
 
@@ -27,10 +27,13 @@ public sealed class FilterStoreWorker : BackgroundService
 
         using var pub = new PublisherSocket();
         pub.Connect(PubConnect);
-        NetMQMessage? msg = new NetMQMessage();
+        NetMQMessage? msg = null;
         while (!ct.IsCancellationRequested)
         {
-            if (!sub.TryReceiveMultipartMessage(TimeSpan.FromMilliseconds(100), ref msg)) continue;
+            if (!sub.TryReceiveMultipartMessage(TimeSpan.FromMilliseconds(100), ref msg) || msg is null || msg.FrameCount < 2)
+            {
+                continue;
+            }
 
             var payload = msg[1].ConvertToString();
 
@@ -38,7 +41,14 @@ public sealed class FilterStoreWorker : BackgroundService
             var m = JsonSerializer.Deserialize<Measurement>(payload, JsonOptions.Default);
             if (m is null) continue;
 
-            await Task.Delay(200, ct); // demo delay
+            try
+            {
+                await Task.Delay(200, ct); // demo delay
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
 
             var f = new FilteredMeasurement(m.Key, m.Value, DateTime.UtcNow);
 
@@ -51,5 +61,5 @@ public sealed class FilterStoreWorker : BackgroundService
             outMsg.Append(outJson);
             pub.SendMultipartMessage(outMsg);
         }
-    }, ct);
+    }
 }
