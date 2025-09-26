@@ -1,12 +1,14 @@
+using System;
+using System.Linq;
 using EquipmentHubDemo.Components;
 using EquipmentHubDemo.Client.Services;
 using EquipmentHubDemo.Domain;
 using EquipmentHubDemo.Domain.Live;
-using Microsoft.Extensions.Configuration;
 using EquipmentHubDemo.Infrastructure;
 using EquipmentHubDemo.Live;
 using EquipmentHubDemo.Workers;
 using EquipmentHubDemo.Components.Pages;
+using Microsoft.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +26,36 @@ builder.Services.Configure<ApiClientOptions>(options =>
     builder.Configuration.GetSection(ApiClientOptions.SectionName).Bind(options));
 builder.Services.AddScoped<IApiBaseUriProvider, ApiBaseUriProvider>();
 builder.Services.AddScoped<ILiveMeasurementClient, HttpLiveMeasurementClient>();
+
+var defaultDevOrigins = new[]
+{
+    "http://127.0.0.1:65061",
+    "https://localhost:7118",
+    "http://localhost:5026"
+};
+
+var configuredOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>()
+    ?.Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .Select(origin => origin!.Trim())
+    .Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .ToArray() ?? Array.Empty<string>();
+
+var allowedOrigins = defaultDevOrigins
+    .Concat(configuredOrigins)
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("DevClient", policy =>
+    {
+        policy.WithOrigins(allowedOrigins)
+            .WithMethods("GET")
+            .WithHeaders(HeaderNames.Accept, HeaderNames.ContentType);
+    });
+});
 
 // Infra + services
 builder.Services.AddSingleton<IMeasurementRepository>(sp =>
@@ -48,6 +80,8 @@ app.MapStaticAssets();
 
 // Antiforgery middleware must be in the pipeline
 app.UseAntiforgery();
+
+app.UseCors("DevClient");
 
 // ---------- Minimal read APIs for WASM UI ----------
 app.MapGet("/api/keys", (ILiveCache cache) =>
