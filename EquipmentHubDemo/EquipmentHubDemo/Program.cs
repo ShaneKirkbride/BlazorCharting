@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using EquipmentHubDemo.Components;
 using EquipmentHubDemo.Client.Services;
 using EquipmentHubDemo.Domain;
@@ -8,6 +11,10 @@ using EquipmentHubDemo.Live;
 using EquipmentHubDemo.Workers;
 using EquipmentHubDemo.Components.Pages;
 using Microsoft.Net.Http.Headers;
+
+static bool IsHttpScheme(string? scheme) =>
+    string.Equals(scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+    string.Equals(scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,18 +33,74 @@ builder.Services.Configure<ApiClientOptions>(options =>
 builder.Services.AddScoped<IApiBaseUriProvider, ApiBaseUriProvider>();
 builder.Services.AddScoped<ILiveMeasurementClient, HttpLiveMeasurementClient>();
 
+var configuredOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>()
+    ?.Select(origin => origin?.Trim())
+    .Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .Select(origin => origin!)
+    .ToArray() ?? Array.Empty<string>();
+
+var allowedExactOrigins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+var allowedAuthorities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+var allowedHostnames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+foreach (var entry in configuredOrigins)
+{
+    if (Uri.TryCreate(entry, UriKind.Absolute, out var uri) &&
+        IsHttpScheme(uri.Scheme) &&
+        !string.IsNullOrEmpty(uri.Host))
+    {
+        allowedExactOrigins.Add(uri.GetLeftPart(UriPartial.Authority));
+    }
+    else if (entry.Contains(':'))
+    {
+        allowedAuthorities.Add(entry);
+    }
+    else
+    {
+        allowedHostnames.Add(entry);
+    }
+}
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("DevClient", policy =>
     {
-        policy.WithOrigins(
-                "http://127.0.0.1:65061",
-                "https://localhost:7118",
-                "http://localhost:5026")
-            .WithMethods("GET")
+        policy.WithMethods("GET")
             .WithHeaders(
                 HeaderNames.Accept,
-                HeaderNames.ContentType);
+                HeaderNames.ContentType)
+            .SetIsOriginAllowed(origin =>
+            {
+                if (string.IsNullOrWhiteSpace(origin))
+                {
+                    return false;
+                }
+
+                if (allowedExactOrigins.Contains(origin))
+                {
+                    return true;
+                }
+
+                if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) ||
+                    !IsHttpScheme(uri.Scheme))
+                {
+                    return false;
+                }
+
+                if (uri.IsLoopback)
+                {
+                    return true;
+                }
+
+                if (allowedAuthorities.Contains(uri.Authority))
+                {
+                    return true;
+                }
+
+                return allowedHostnames.Contains(uri.Host);
+            });
     });
 });
 
