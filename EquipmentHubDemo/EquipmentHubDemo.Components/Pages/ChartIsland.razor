@@ -11,7 +11,7 @@
 
 <p class="text-muted small">island points: @Points.Count</p>
 
-@if (OperatingSystem.IsBrowser())
+@if (ShouldRenderChart)
 {
     <CartesianChart Series="Series"
                     XAxes="xAxes"
@@ -26,6 +26,13 @@ else
 
 @code {
     [Parameter] public IReadOnlyList<PointDto> Points { get; set; } = Array.Empty<PointDto>();
+    /// <summary>
+    /// Forces the component to render the chart even when <see cref="OperatingSystem.IsBrowser"/> returns <c>false</c>.
+    /// Enable this when running the UI in a WebAssembly context but the runtime cannot yet detect the browser (e.g., during
+    /// prerendering) to suppress the informational placeholder.
+    /// </summary>
+    [Parameter]
+    public bool ForceEnableChartRendering { get; set; }
     [Parameter] public string? Title { get; set; }
 
     private static int _configuredFlag;
@@ -37,6 +44,9 @@ else
 
     private string? _lastKeyOrTitle;
     private int _lastAppliedCount;
+    private long _lastObservedFirstTick;
+
+    private bool ShouldRenderChart => ForceEnableChartRendering || OperatingSystem.IsBrowser();
 
     protected override void OnInitialized()
     {
@@ -72,32 +82,62 @@ else
             }
         }
 
-        // If the selected series/key changed, reset the collection once.
+        var requiresFullSync = false;
+
         if (_lastKeyOrTitle != Title)
         {
-            _values.Clear();
-            _lastAppliedCount = 0;
-            _lastKeyOrTitle = Title;
+            requiresFullSync = true;
         }
 
-        // If server snapshot shrank (e.g., TTL or selection), resync once.
-        if (Points.Count < _lastAppliedCount)
+        var currentCount = Points.Count;
+
+        if (!requiresFullSync && currentCount < _lastAppliedCount)
+        {
+            requiresFullSync = true;
+        }
+
+        if (!requiresFullSync && _values.Count != currentCount)
+        {
+            requiresFullSync = true;
+        }
+
+        if (!requiresFullSync && currentCount > 0)
+        {
+            var firstTick = Points[0].X.Ticks;
+            if (_lastObservedFirstTick != 0 && firstTick != _lastObservedFirstTick)
+            {
+                requiresFullSync = true;
+            }
+        }
+
+        if (requiresFullSync)
         {
             _values.Clear();
             _lastAppliedCount = 0;
         }
 
         // Append only new points (avoid tearing down chart every tick)
-        for (int i = _lastAppliedCount; i < Points.Count; i++)
+        for (int i = _lastAppliedCount; i < currentCount; i++)
         {
             var p = Points[i];
             _values.Add(new ObservablePoint(p.X.ToOADate(), p.Y));
         }
-        _lastAppliedCount = Points.Count;
+        _lastAppliedCount = currentCount;
 
         // Keep a hard cap (optional; aligns with server cap)
         const int max = 2000;
         while (_values.Count > max) _values.RemoveAt(0);
+
+        if (currentCount > 0)
+        {
+            _lastObservedFirstTick = Points[0].X.Ticks;
+        }
+        else
+        {
+            _lastObservedFirstTick = 0;
+        }
+
+        _lastKeyOrTitle = Title;
 
         xAxes[0].Name = string.IsNullOrWhiteSpace(Title) ? "Time" : Title!;
     }
