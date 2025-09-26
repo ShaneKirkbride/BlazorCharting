@@ -12,4 +12,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.6" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\EquipmentHubDemo.Components\EquipmentHubDemo.Components.csproj" />
+  </ItemGroup>
+
 </Project>

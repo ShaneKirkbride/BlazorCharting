@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RazorLangVersion>Latest</RazorLangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\EquipmentHubDemo.Domain\EquipmentHubDemo.Domain.csproj" />
+    <PackageReference Include="LiveChartsCore.SkiaSharpView.Blazor" Version="2.0.0-rc6.1" />
+  </ItemGroup>
+</Project>
