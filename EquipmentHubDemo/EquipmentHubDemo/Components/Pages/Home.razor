@@ -30,7 +30,10 @@
 
 <button class="btn btn-sm btn-primary ms-2" @onclick="Toggle">@((running ? "Pause" : "Run"))</button>
 
-<p class="text-muted small mt-2">points: @_values.Count</p>
+<div class="d-flex flex-wrap align-items-center gap-3 mt-2">
+    <span class="badge bg-primary text-wrap">Measurements received: @_totalReceived</span>
+    <span class="text-muted small">Active buffer: @_values.Count</span>
+</div>
 
 <CartesianChart Series="Series"
                 XAxes="xAxes"
@@ -48,6 +51,7 @@
     private static int _chartsConfiguredFlag;
 
     private readonly ObservableCollection<ObservablePoint> _values = new();
+    private long _totalReceived;
     private ISeries[] Series = Array.Empty<ISeries>();
     private readonly Axis[] xAxes = { new Axis { Name = "Time", Labeler = v => DateTime.FromOADate(v).ToString("HH:mm:ss") } };
     private readonly Axis[] yAxes = { new Axis { Name = "Value" } };
@@ -106,6 +110,7 @@
 
         _values.Clear();
         _sinceTicks = 0;
+        _totalReceived = 0;
         _cts = new CancellationTokenSource();
         _ = PollLoopAsync(selectedKey, _cts.Token);
     }
@@ -133,13 +138,21 @@
 
                 if (batch is null || batch.Count == 0) continue;
 
+                var newPoints = 0;
                 foreach (var p in batch)
                 {
                     _values.Add(new ObservablePoint(p.X.ToOADate(), p.Y));
                     _sinceTicks = Math.Max(_sinceTicks, p.X.Ticks);
+                    newPoints++;
                 }
 
                 while (_values.Count > 2000) _values.RemoveAt(0);
+
+                if (newPoints > 0)
+                {
+                    _totalReceived += newPoints;
+                    await InvokeAsync(StateHasChanged);
+                }
             }
             catch (Exception ex)
             {
