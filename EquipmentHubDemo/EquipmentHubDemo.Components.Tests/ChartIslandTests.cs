@@ -85,6 +85,58 @@ public sealed class ChartIslandTests : TestContext
     }
 
     [Fact]
+    public void ChartIsland_UpdatesValuesWhenSlidingWindowMaintainsCount()
+    {
+        ResetConfigurationFlag();
+
+        var baseTime = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var initialPoints = new[]
+        {
+            new PointDto { X = baseTime, Y = 1 },
+            new PointDto { X = baseTime.AddSeconds(1), Y = 2 },
+            new PointDto { X = baseTime.AddSeconds(2), Y = 3 }
+        };
+
+        var cut = RenderComponent<ChartIsland>(parameters => parameters
+            .Add(p => p.Title, "Line Sliding")
+            .Add(p => p.Points, initialPoints));
+
+        var valuesField = typeof(ChartIsland).GetField("_values", BindingFlags.Instance | BindingFlags.NonPublic);
+        var values = Assert.IsAssignableFrom<ObservableCollection<ObservablePoint>>(valuesField?.GetValue(cut.Instance));
+
+        Assert.Equal(initialPoints.Length, values.Count);
+
+        var slidingPoints = new[]
+        {
+            initialPoints[1],
+            initialPoints[2],
+            new PointDto { X = baseTime.AddSeconds(3), Y = 4 }
+        };
+
+        cut.SetParametersAndRender(parameters => parameters
+            .Add(p => p.Title, "Line Sliding")
+            .Add(p => p.Points, slidingPoints));
+
+        Assert.Equal(slidingPoints.Length, values.Count);
+        Assert.Equal(slidingPoints[0].X.ToOADate(), values[0].X);
+        Assert.Equal(slidingPoints[^1].Y, values[^1].Y);
+    }
+
+    [Fact]
+    public void ChartIsland_ShowsPlaceholderWhenForceDisabledOutsideBrowser()
+    {
+        ResetConfigurationFlag();
+
+        var cut = RenderComponent<ChartIsland>(parameters => parameters
+            .Add(p => p.Title, "Line Z")
+            .Add(p => p.ForceEnableChartRendering, false)
+            .Add(p => p.Points, Array.Empty<PointDto>()));
+
+        var placeholder = cut.Find("[data-testid='chart-placeholder']");
+        Assert.Contains("WebAssembly-enabled", placeholder.TextContent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ChartIsland_InitializesLineSeriesWithLiveCharts()
     {
         ResetConfigurationFlag();
