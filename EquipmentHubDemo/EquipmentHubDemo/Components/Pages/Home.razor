@@ -4,6 +4,7 @@
 @namespace EquipmentHubDemo.Components.Pages
 
 @using System.Collections.ObjectModel
+@using System.Threading
 @using LiveChartsCore
 @using LiveChartsCore.Defaults
 @using LiveChartsCore.SkiaSharpView
@@ -44,6 +45,8 @@
     private string? selectedKey;
     private bool running = true;
 
+    private static int _chartsConfiguredFlag;
+
     private readonly ObservableCollection<ObservablePoint> _values = new();
     private ISeries[] Series = Array.Empty<ISeries>();
     private readonly Axis[] xAxes = { new Axis { Name = "Time", Labeler = v => DateTime.FromOADate(v).ToString("HH:mm:ss") } };
@@ -58,7 +61,10 @@
     {
         try
         {
-            LiveCharts.Configure(cfg => cfg.AddSkiaSharp());
+            if (Interlocked.Exchange(ref _chartsConfiguredFlag, 1) == 0)
+            {
+                LiveCharts.Configure(cfg => cfg.AddSkiaSharp());
+            }
 
             Series = new ISeries[]
             {

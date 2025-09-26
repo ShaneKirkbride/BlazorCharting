@@ -1,6 +1,7 @@
 ﻿@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
 @using Microsoft.AspNetCore.Components.Web
 @using System.Collections.ObjectModel
+@using System.Threading
 @using LiveChartsCore
 @using LiveChartsCore.Defaults
 @using LiveChartsCore.SkiaSharpView
@@ -16,7 +17,7 @@
     [Parameter] public IReadOnlyList<PointDto> Points { get; set; } = Array.Empty<PointDto>();
     [Parameter] public string? Title { get; set; }
 
-    private static bool _configured;
+    private static int _configuredFlag;
 
     private readonly ObservableCollection<ObservablePoint> _values = new();
     private readonly Axis[] xAxes = { new Axis { Name = "Time", Labeler = v => DateTime.FromOADate(v).ToString("HH:mm:ss") } };
@@ -28,10 +29,9 @@
 
     protected override void OnInitialized()
     {
-        if (!_configured)
+        if (Interlocked.Exchange(ref _configuredFlag, 1) == 0)
         {
             LiveCharts.Configure(cfg => cfg.AddSkiaSharp()); // must happen in WASM context
-            _configured = true;
         }
 
         Series = new ISeries[]
