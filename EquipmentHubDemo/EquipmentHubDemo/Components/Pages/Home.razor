@@ -148,7 +148,7 @@
                     var batch = await Http.GetFromJsonAsync<List<PointDto>>(url, new System.Text.Json.JsonSerializerOptions
                     {
                         PropertyNameCaseInsensitive = true
-                    });
+                    }, ct);
 
                     if (batch is null || batch.Count == 0)
                     {
