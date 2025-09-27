@@ -53,8 +53,9 @@ else
     private static readonly IReadOnlyDictionary<string, VerticalAxisMetadata> VerticalAxisByMetric =
         new Dictionary<string, VerticalAxisMetadata>(StringComparer.OrdinalIgnoreCase)
         {
-            ["Power"] = new VerticalAxisMetadata("Power (dBm)", FormatWithTwoDecimals),
-            ["SNR"] = new VerticalAxisMetadata("Signal-to-Noise Ratio (dB)", FormatWithOneDecimal)
+            ["Temperature"] = new VerticalAxisMetadata("Temperature (°C)", FormatWithOneDecimal),
+            ["Humidity"] = new VerticalAxisMetadata("Relative Humidity (%)", FormatWithOneDecimal),
+            ["Power (240VAC)"] = new VerticalAxisMetadata("Power (240 VAC)", FormatWithTwoDecimals)
         };
 
     private readonly ObservableCollection<ObservablePoint> _values = new();

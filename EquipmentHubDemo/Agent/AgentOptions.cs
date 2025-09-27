@@ -76,12 +76,12 @@ public sealed class AgentOptions
             new InstrumentOptions
             {
                 InstrumentId = "UXG-01",
-                Metrics = new List<string> { "Power", "SNR" }
+                Metrics = new List<string> { "Temperature", "Humidity", "Power (240VAC)" }
             },
             new InstrumentOptions
             {
                 InstrumentId = "UXG-02",
-                Metrics = new List<string> { "Power", "SNR" }
+                Metrics = new List<string> { "Temperature", "Humidity", "Power (240VAC)" }
             }
         };
 }

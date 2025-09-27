@@ -22,7 +22,7 @@ public static class ProgramTests
     public static void Measurement_WithExpression_CreatesUpdatedCopy()
     {
         var timestamp = new DateTime(2024, 01, 02, 03, 04, 05, DateTimeKind.Utc);
-        var key = new MeasureKey("UXG-42", "Power");
+        var key = new MeasureKey("UXG-42", "Power (240VAC)");
         var measurement = new Measurement(key, 10.5, timestamp);
 
         var updated = measurement with { Value = 12.3 };
@@ -38,7 +38,7 @@ public static class ProgramTests
     {
         var timestamp = new DateTime(2024, 05, 06, 07, 08, 09, DateTimeKind.Utc);
         var measurement = new Measurement(
-            new MeasureKey("UXG-11", "SNR"),
+            new MeasureKey("UXG-11", "Humidity"),
             42.1,
             timestamp);
 
@@ -47,7 +47,7 @@ public static class ProgramTests
 
         Assert.True(root.TryGetProperty("key", out var keyElement));
         Assert.Equal("UXG-11", keyElement.GetProperty("instrumentId").GetString());
-        Assert.Equal("SNR", keyElement.GetProperty("metric").GetString());
+        Assert.Equal("Humidity", keyElement.GetProperty("metric").GetString());
         Assert.Equal(42.1, root.GetProperty("value").GetDouble());
         Assert.Equal(timestamp, root.GetProperty("timestampUtc").GetDateTime().ToUniversalTime());
     }
@@ -62,12 +62,12 @@ public static class ProgramTests
                 new()
                 {
                     InstrumentId = "A-01",
-                    Metrics = new List<string> { "Power" }
+                    Metrics = new List<string> { "Power (240VAC)" }
                 },
                 new()
                 {
                     InstrumentId = "B-02",
-                    Metrics = new List<string> { "SNR", "Custom" }
+                    Metrics = new List<string> { "Humidity", "Custom" }
                 }
             }
         });
@@ -79,8 +79,9 @@ public static class ProgramTests
         var results = generator.CreateMeasurements(timestamp).ToList();
 
         Assert.Equal(3, results.Count);
-        Assert.Contains(results, m => m.Key.InstrumentId == "A-01" && m.Key.Metric == "Power");
-        Assert.Contains(results, m => m.Key.InstrumentId == "B-02" && m.Key.Metric == "SNR");
+        Assert.Contains(results, m => m.Key.InstrumentId == "A-01" && m.Key.Metric == "Power (240VAC)"
+            && m.Value != default);
+        Assert.Contains(results, m => m.Key.InstrumentId == "B-02" && m.Key.Metric == "Humidity");
         Assert.Contains(results, m => m.Key.InstrumentId == "B-02" && m.Key.Metric == "Custom");
     }
 }

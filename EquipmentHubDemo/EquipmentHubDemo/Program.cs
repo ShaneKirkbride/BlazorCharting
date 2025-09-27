@@ -133,7 +133,7 @@ app.UseCors("DevClient");
 // ---------- Minimal read APIs for WASM UI ----------
 app.MapGet("/api/keys", (ILiveCache cache) =>
 {
-    // returns: ["UXG-01:Power", "UXG-02:SNR", ...]
+    // returns: ["UXG-01:Temperature", "UXG-01:Humidity", "UXG-01:Power (240VAC)", ...]
     return Results.Json(cache.Keys);
 });
 
