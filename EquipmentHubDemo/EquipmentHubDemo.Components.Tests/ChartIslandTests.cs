@@ -49,10 +49,49 @@ public sealed class ChartIslandTests : TestContext
 
         var axesField = typeof(ChartIsland).GetField("xAxes", BindingFlags.Instance | BindingFlags.NonPublic);
         var axes = Assert.IsAssignableFrom<Axis[]>(axesField?.GetValue(instance));
-        Assert.Equal("Telemetry", axes[0].Name);
+        Assert.Equal("Time (UTC)", axes[0].Name);
+
+        var yAxesField = typeof(ChartIsland).GetField("yAxes", BindingFlags.Instance | BindingFlags.NonPublic);
+        var yAxes = Assert.IsAssignableFrom<Axis[]>(yAxesField?.GetValue(instance));
+        Assert.Equal("Value", yAxes[0].Name);
 
         var configuredFlag = GetConfigurationFlag();
         Assert.Equal(1, configuredFlag);
+    }
+
+    [Fact]
+    public void ChartIsland_UpdatesAxisMetadataBasedOnMeasureKey()
+    {
+        ResetConfigurationFlag();
+
+        var baseTime = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var points = new[] { new PointDto { X = baseTime, Y = 3.5 } };
+
+        var cut = RenderComponent<ChartIsland>(parameters => parameters
+            .Add(p => p.Title, "UXG-01:Power")
+            .Add(p => p.Points, points));
+
+        var xAxesField = typeof(ChartIsland).GetField("xAxes", BindingFlags.Instance | BindingFlags.NonPublic);
+        var xAxes = Assert.IsAssignableFrom<Axis[]>(xAxesField?.GetValue(cut.Instance));
+        var yAxesField = typeof(ChartIsland).GetField("yAxes", BindingFlags.Instance | BindingFlags.NonPublic);
+        var yAxes = Assert.IsAssignableFrom<Axis[]>(yAxesField?.GetValue(cut.Instance));
+
+        Assert.Equal("UXG-01 Time (UTC)", xAxes[0].Name);
+        Assert.Equal("Power (dBm)", yAxes[0].Name);
+
+        cut.SetParametersAndRender(parameters => parameters
+            .Add(p => p.Title, "UXG-01:SNR")
+            .Add(p => p.Points, points));
+
+        Assert.Equal("UXG-01 Time (UTC)", xAxes[0].Name);
+        Assert.Equal("Signal-to-Noise Ratio (dB)", yAxes[0].Name);
+
+        cut.SetParametersAndRender(parameters => parameters
+            .Add(p => p.Title, "UXG-02:Voltage")
+            .Add(p => p.Points, points));
+
+        Assert.Equal("UXG-02 Time (UTC)", xAxes[0].Name);
+        Assert.Equal("Voltage", yAxes[0].Name);
     }
 
     [Fact]

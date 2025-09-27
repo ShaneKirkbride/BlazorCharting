@@ -3,7 +3,9 @@
 @using Microsoft.AspNetCore.Components.Web
 @using System
 @using System.Collections.ObjectModel
+@using System.Globalization
 @using System.Threading
+@using EquipmentHubDemo.Domain
 @using LiveChartsCore
 @using LiveChartsCore.Defaults
 @using LiveChartsCore.SkiaSharpView
@@ -13,9 +15,11 @@
 
 @if (ShouldRenderChart)
 {
-    <CartesianChart Series="Series"
-                    XAxes="xAxes"
-                    YAxes="yAxes" />
+    <div class="chart-island__surface">
+        <CartesianChart Series="Series"
+                        XAxes="xAxes"
+                        YAxes="yAxes" />
+    </div>
 }
 else
 {
@@ -39,9 +43,23 @@ else
 
     private static int _configuredFlag;
 
+    private const string DefaultTimeAxisName = "Time (UTC)";
+
+    private static readonly Func<double, string> TimeLabeler = value => DateTime.FromOADate(value)
+        .ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+
+    private static readonly VerticalAxisMetadata DefaultVerticalAxis = new("Value", FormatWithTwoDecimals);
+
+    private static readonly IReadOnlyDictionary<string, VerticalAxisMetadata> VerticalAxisByMetric =
+        new Dictionary<string, VerticalAxisMetadata>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Power"] = new VerticalAxisMetadata("Power (dBm)", FormatWithTwoDecimals),
+            ["SNR"] = new VerticalAxisMetadata("Signal-to-Noise Ratio (dB)", FormatWithOneDecimal)
+        };
+
     private readonly ObservableCollection<ObservablePoint> _values = new();
-    private readonly Axis[] xAxes = { new Axis { Name = "Time", Labeler = v => DateTime.FromOADate(v).ToString("HH:mm:ss") } };
-    private readonly Axis[] yAxes = { new Axis { Name = "Value" } };
+    private readonly Axis[] xAxes = { new Axis { Name = DefaultTimeAxisName, Labeler = TimeLabeler } };
+    private readonly Axis[] yAxes = { new Axis { Name = DefaultVerticalAxis.Name, Labeler = DefaultVerticalAxis.Labeler } };
     private ISeries[] Series = Array.Empty<ISeries>();
 
     private string? _lastKeyOrTitle;
@@ -139,8 +157,53 @@ else
             _lastObservedFirstTick = 0;
         }
 
-        _lastKeyOrTitle = Title;
+        ApplyAxisMetadata(Title);
 
-        xAxes[0].Name = string.IsNullOrWhiteSpace(Title) ? "Time" : Title!;
+        _lastKeyOrTitle = Title;
     }
+
+    private void ApplyAxisMetadata(string? rawKey)
+    {
+        xAxes[0].Labeler = TimeLabeler;
+
+        if (!string.IsNullOrWhiteSpace(rawKey) && MeasureKey.TryParse(rawKey, out var parsedKey))
+        {
+            xAxes[0].Name = string.IsNullOrWhiteSpace(parsedKey.InstrumentId)
+                ? DefaultTimeAxisName
+                : $"{parsedKey.InstrumentId} Time (UTC)";
+
+            var vertical = ResolveVerticalAxis(parsedKey.Metric);
+            yAxes[0].Name = vertical.Name;
+            yAxes[0].Labeler = vertical.Labeler;
+            return;
+        }
+
+        xAxes[0].Name = DefaultTimeAxisName;
+        var fallback = ResolveVerticalAxis(null);
+        yAxes[0].Name = fallback.Name;
+        yAxes[0].Labeler = fallback.Labeler;
+    }
+
+    private static VerticalAxisMetadata ResolveVerticalAxis(string? metric)
+    {
+        if (!string.IsNullOrWhiteSpace(metric) && VerticalAxisByMetric.TryGetValue(metric, out var metadata))
+        {
+            return metadata;
+        }
+
+        if (!string.IsNullOrWhiteSpace(metric))
+        {
+            return new VerticalAxisMetadata(metric, DefaultVerticalAxis.Labeler);
+        }
+
+        return DefaultVerticalAxis;
+    }
+
+    private static string FormatWithTwoDecimals(double value)
+        => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private static string FormatWithOneDecimal(double value)
+        => value.ToString("0.#", CultureInfo.InvariantCulture);
+
+    private sealed record VerticalAxisMetadata(string Name, Func<double, string> Labeler);
 }

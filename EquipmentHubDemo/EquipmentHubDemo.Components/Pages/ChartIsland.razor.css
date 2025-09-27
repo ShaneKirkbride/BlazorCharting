@@ -1,0 +1,12 @@
+.chart-island__surface {
+    width: 100%;
+    min-height: 24rem;
+    display: flex;
+}
+
+.chart-island__surface :deep(.lvc-chart),
+.chart-island__surface :deep(.lc-chart),
+.chart-island__surface :deep(canvas) {
+    width: 100%;
+    height: 100%;
+}
