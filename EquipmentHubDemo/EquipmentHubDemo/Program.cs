@@ -4,9 +4,15 @@ using System.Linq;
 using EquipmentHubDemo.Components;
 using EquipmentHubDemo.Client.Services;
 using EquipmentHubDemo.Domain;
+using EquipmentHubDemo.Domain.Control;
 using EquipmentHubDemo.Domain.Live;
+using EquipmentHubDemo.Domain.Monitoring;
+using EquipmentHubDemo.Domain.Predict;
 using Microsoft.Extensions.Configuration;
 using EquipmentHubDemo.Infrastructure;
+using EquipmentHubDemo.Infrastructure.Control;
+using EquipmentHubDemo.Instrumentation;
+using EquipmentHubDemo.Infrastructure.Predict;
 using EquipmentHubDemo.Live;
 using EquipmentHubDemo.Workers;
 using EquipmentHubDemo.Components.Pages;
@@ -32,6 +38,12 @@ builder.Services.Configure<ApiClientOptions>(options =>
     builder.Configuration.GetSection(ApiClientOptions.SectionName).Bind(options));
 builder.Services.AddScoped<IApiBaseUriProvider, ApiBaseUriProvider>();
 builder.Services.AddScoped<ILiveMeasurementClient, HttpLiveMeasurementClient>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<Random>(_ => Random.Shared);
+
+builder.Services.Configure<SimulatedScpiOptions>(builder.Configuration.GetSection(SimulatedScpiOptions.SectionName));
+builder.Services.Configure<PredictiveDiagnosticsOptions>(builder.Configuration.GetSection(PredictiveDiagnosticsOptions.SectionName));
+builder.Services.Configure<KubernetesTrafficOptions>(builder.Configuration.GetSection(KubernetesTrafficOptions.SectionName));
 
 var configuredOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins")
@@ -108,10 +120,20 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<IMeasurementRepository>(sp =>
     new LiteDbMeasurementRepository(
         Path.Combine(builder.Environment.ContentRootPath, "data", "measurements.db")));
+builder.Services.AddSingleton<IDiagnosticRepository>(sp =>
+    new LiteDbDiagnosticRepository(
+        Path.Combine(builder.Environment.ContentRootPath, "data", "diagnostics.db")));
 
 builder.Services.Configure<LiveCacheOptions>(builder.Configuration.GetSection(LiveCacheOptions.SectionName));
 builder.Services.Configure<TtlWorkerOptions>(builder.Configuration.GetSection(TtlWorkerOptions.SectionName));
 builder.Services.AddSingleton<ILiveCache, LiveCache>();
+builder.Services.AddSingleton<IScpiCommandClient, SimulatedScpiCommandClient>();
+builder.Services.AddSingleton<IPredictiveDiagnosticsService, PredictiveDiagnosticsService>();
+builder.Services.AddSingleton<IPredictiveMaintenanceService, PredictiveMaintenanceService>();
+builder.Services.AddSingleton<IInstrumentConfigurationService, ScenarioConfigurationService>();
+builder.Services.AddSingleton<IInstrumentCalibrationService, InstrumentCalibrationService>();
+builder.Services.AddSingleton<IRfPathService, RfPathService>();
+builder.Services.AddSingleton<INetworkTrafficOptimizer, KubernetesNetworkTrafficOptimizer>();
 
 // Background services (broker + workers)
 builder.Services.AddHostedService<ZmqBrokerService>();

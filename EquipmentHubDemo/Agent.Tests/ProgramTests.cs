@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using EquipmentHubDemo.Domain.Monitoring;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -73,15 +74,44 @@ public static class ProgramTests
         });
         options.Value.Normalize();
 
-        var generator = new MeasurementGenerator(options, new Random(0), NullLogger<MeasurementGenerator>.Instance);
+        var monitorOptions = Options.Create(new InstrumentMonitorOptions
+        {
+            Instruments = new[] { "A-01", "B-02" }
+        });
+
+        var generator = new MeasurementGenerator(
+            options,
+            monitorOptions,
+            new StubScpiClient(),
+            TimeProvider.System,
+            new Random(0),
+            NullLogger<MeasurementGenerator>.Instance);
         var timestamp = new DateTime(2024, 07, 08, 09, 10, 11, DateTimeKind.Utc);
 
         var results = generator.CreateMeasurements(timestamp).ToList();
 
-        Assert.Equal(3, results.Count);
+        Assert.Equal(10, results.Count);
         Assert.Contains(results, m => m.Key.InstrumentId == "A-01" && m.Key.Metric == "Power (240VAC)"
             && m.Value != default);
-        Assert.Contains(results, m => m.Key.InstrumentId == "B-02" && m.Key.Metric == "Humidity");
+        Assert.Contains(results, m => m.Key.InstrumentId == "B-02" && m.Key.Metric == "Humidity" && Math.Abs(m.Value - 40.0) < 0.001);
         Assert.Contains(results, m => m.Key.InstrumentId == "B-02" && m.Key.Metric == "Custom");
+        Assert.True(results.Count(m => m.Key.Metric == "Heartbeat") == 2);
+        Assert.True(results.Count(m => m.Key.Metric == "SelfCheck") == 2);
+        Assert.True(results.Count(m => m.Key.Metric == "Temperature") == 2);
+    }
+}
+
+internal sealed class StubScpiClient : IScpiCommandClient
+{
+    public Task<string> SendAsync(string instrumentId, string command, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(command switch
+        {
+            "*IDN?" => $"StubCo,Model,{instrumentId},1.0",
+            "SELF:CHECK?" => "0,OK",
+            "MEAS:TEMP?" => "25.5",
+            "MEAS:HUM?" => "40.0",
+            _ => throw new InvalidOperationException($"Unexpected command {command}.")
+        });
     }
 }
