@@ -42,14 +42,19 @@ internal sealed class MeasurementGenerator : IMeasurementGenerator
 
     private double GenerateValue(string metric, double angle)
     {
-        if (string.Equals(metric, "Power", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(metric, "Temperature", StringComparison.OrdinalIgnoreCase))
         {
-            return 10 + 2 * Math.Sin(angle) + _random.NextDouble();
+            return 22 + 5 * Math.Sin(angle) + 0.5 * _random.NextDouble();
         }
 
-        if (string.Equals(metric, "SNR", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(metric, "Humidity", StringComparison.OrdinalIgnoreCase))
         {
-            return 30 + 5 * Math.Cos(angle) + _random.NextDouble();
+            return 45 + 15 * Math.Cos(angle) + _random.NextDouble();
+        }
+
+        if (string.Equals(metric, "Power (240VAC)", StringComparison.OrdinalIgnoreCase))
+        {
+            return 240 + 5 * Math.Sin(angle) + 2 * _random.NextDouble();
         }
 
         return GenerateFallbackValue(metric);

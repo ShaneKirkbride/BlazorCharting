@@ -68,7 +68,7 @@ public sealed class ChartIslandTests : TestContext
         var points = new[] { new PointDto { X = baseTime, Y = 3.5 } };
 
         var cut = RenderComponent<ChartIsland>(parameters => parameters
-            .Add(p => p.Title, "UXG-01:Power")
+            .Add(p => p.Title, "UXG-01:Temperature")
             .Add(p => p.Points, points));
 
         var xAxesField = typeof(ChartIsland).GetField("xAxes", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -77,14 +77,14 @@ public sealed class ChartIslandTests : TestContext
         var yAxes = Assert.IsAssignableFrom<Axis[]>(yAxesField?.GetValue(cut.Instance));
 
         Assert.Equal("UXG-01 Time (UTC)", xAxes[0].Name);
-        Assert.Equal("Power (dBm)", yAxes[0].Name);
+        Assert.Equal("Temperature (°C)", yAxes[0].Name);
 
         cut.SetParametersAndRender(parameters => parameters
-            .Add(p => p.Title, "UXG-01:SNR")
+            .Add(p => p.Title, "UXG-01:Humidity")
             .Add(p => p.Points, points));
 
         Assert.Equal("UXG-01 Time (UTC)", xAxes[0].Name);
-        Assert.Equal("Signal-to-Noise Ratio (dB)", yAxes[0].Name);
+        Assert.Equal("Relative Humidity (%)", yAxes[0].Name);
 
         cut.SetParametersAndRender(parameters => parameters
             .Add(p => p.Title, "UXG-02:Voltage")
