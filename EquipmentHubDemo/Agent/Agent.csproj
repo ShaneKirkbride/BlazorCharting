@@ -15,6 +15,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\EquipmentHubDemo.Domain\EquipmentHubDemo.Domain.csproj" />
+    <ProjectReference Include="..\EquipmentHubDemo.Instrumentation\EquipmentHubDemo.Instrumentation.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
