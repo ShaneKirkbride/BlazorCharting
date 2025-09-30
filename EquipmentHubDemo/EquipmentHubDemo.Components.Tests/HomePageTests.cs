@@ -86,6 +86,38 @@ public sealed class HomePageTests : TestContext
         }, timeout: TimeSpan.FromSeconds(5));
     }
 
+    [Fact]
+    public void Home_RendersUpToThreeChartsByDefault()
+    {
+        // Arrange
+        var measurementClient = new StubLiveMeasurementClient(
+            keysSequence: new[]
+            {
+                new[] { "Line A", "Line B", "Line C", "Line D" }
+            },
+            measurementsSequence: new IReadOnlyList<PointDto>[]
+            {
+                Array.Empty<PointDto>()
+            });
+
+        Services.AddSingleton<ILiveMeasurementClient>(measurementClient);
+
+        // Act
+        var cut = RenderComponent<Home>();
+
+        // Assert
+        cut.WaitForAssertion(() =>
+        {
+            var chartIslands = cut.FindComponents<ChartIsland>();
+            Assert.Equal(3, chartIslands.Count);
+
+            var titles = cut.FindAll("h6.card-title").Select(e => e.TextContent.Trim()).ToList();
+            Assert.Contains("Line A", titles);
+            Assert.Contains("Line B", titles);
+            Assert.Contains("Line C", titles);
+        }, timeout: TimeSpan.FromSeconds(2));
+    }
+
     private sealed class StubLiveMeasurementClient : ILiveMeasurementClient
     {
         private readonly Queue<IReadOnlyList<string>> _keys;
