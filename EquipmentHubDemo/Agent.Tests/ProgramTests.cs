@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Text.Json;
 using EquipmentHubDemo.Domain.Monitoring;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -79,14 +80,14 @@ public static class ProgramTests
             Instruments = new[] { "A-01", "B-02" }
         });
 
+        var timestamp = new DateTime(2024, 07, 08, 09, 10, 11, DateTimeKind.Utc);
         var generator = new MeasurementGenerator(
             options,
             monitorOptions,
             new StubScpiClient(),
-            TimeProvider.System,
+            new StaticTimeProvider(timestamp),
             new Random(0),
             NullLogger<MeasurementGenerator>.Instance);
-        var timestamp = new DateTime(2024, 07, 08, 09, 10, 11, DateTimeKind.Utc);
 
         var results = generator.CreateMeasurements(timestamp).ToList();
 
@@ -113,5 +114,27 @@ internal sealed class StubScpiClient : IScpiCommandClient
             "MEAS:HUM?" => "40.0",
             _ => throw new InvalidOperationException($"Unexpected command {command}.")
         });
+    }
+}
+
+internal sealed class StaticTimeProvider : TimeProvider
+{
+    private readonly DateTimeOffset _utcNow;
+
+    public StaticTimeProvider(DateTime utcNow)
+        => _utcNow = new DateTimeOffset(utcNow, TimeSpan.Zero);
+
+    public override DateTimeOffset GetUtcNow() => _utcNow;
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        => new NoopTimer();
+
+    private sealed class NoopTimer : ITimer
+    {
+        public void Dispose() { }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        public bool Change(TimeSpan dueTime, TimeSpan period) => true;
     }
 }

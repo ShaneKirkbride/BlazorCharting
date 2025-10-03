@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using EquipmentHubDemo.Domain;
 using EquipmentHubDemo.Infrastructure;
 using EquipmentHubDemo.Domain.Predict;
