@@ -1,6 +1,7 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using EquipmentHubDemo.Domain;
 using EquipmentHubDemo.Infrastructure;
+using EquipmentHubDemo.Domain.Predict;
 using Microsoft.Extensions.Hosting;
 using NetMQ;
 using NetMQ.Sockets;
@@ -14,8 +15,13 @@ namespace EquipmentHubDemo.Workers;
 public sealed class FilterStoreWorker : BackgroundService
 {
     private readonly IMeasurementRepository _repo;
+    private readonly IDiagnosticRepository _diagnostics;
 
-    public FilterStoreWorker(IMeasurementRepository repo) => _repo = repo;
+    public FilterStoreWorker(IMeasurementRepository repo, IDiagnosticRepository diagnostics)
+    {
+        _repo = repo ?? throw new ArgumentNullException(nameof(repo));
+        _diagnostics = diagnostics ?? throw new ArgumentNullException(nameof(diagnostics));
+    }
 
     protected override Task ExecuteAsync(CancellationToken ct)
         => Task.Factory.StartNew(
@@ -57,6 +63,8 @@ public sealed class FilterStoreWorker : BackgroundService
                     _repo.AppendHistory(f);
                     _repo.UpsertLatest(f);
 
+                    await AppendDiagnosticsAsync(f, ct).ConfigureAwait(false);
+
                     var outJson = JsonSerializer.Serialize(f, JsonOptions.Default);
                     var outMsg = new NetMQMessage(2);
                     outMsg.Append(TopicFiltered);
@@ -68,4 +76,24 @@ public sealed class FilterStoreWorker : BackgroundService
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default)
             .Unwrap();
+
+    private static bool ShouldRecordDiagnostics(string metric)
+        => string.Equals(metric, "Temperature", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(metric, "Humidity", StringComparison.OrdinalIgnoreCase);
+
+    private async Task AppendDiagnosticsAsync(FilteredMeasurement measurement, CancellationToken ct)
+    {
+        if (!ShouldRecordDiagnostics(measurement.Key.Metric))
+        {
+            return;
+        }
+
+        var sample = new DiagnosticSample(
+            measurement.Key.InstrumentId,
+            measurement.Key.Metric,
+            measurement.Value,
+            measurement.TimestampUtc);
+
+        await _diagnostics.AddAsync(sample, ct).ConfigureAwait(false);
+    }
 }
