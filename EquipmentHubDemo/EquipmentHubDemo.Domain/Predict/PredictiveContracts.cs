@@ -55,7 +55,20 @@ public sealed record MaintenancePlan(
 
 public interface IPredictiveMaintenanceService
 {
+    Task<PredictiveMaintenanceSummary> GetSummaryAsync(string instrumentId, string metric, CancellationToken cancellationToken = default);
+
     Task<MaintenancePlan> ScheduleServiceAsync(string instrumentId, string metric, CancellationToken cancellationToken = default);
 
     Task<MaintenancePlan> ScheduleRepairAsync(string instrumentId, string metric, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Aggregated predictive maintenance insight including recommended service and repair plans.
+/// </summary>
+/// <param name="Insight">Latest predictive insight.</param>
+/// <param name="ServicePlan">Recommended service plan.</param>
+/// <param name="RepairPlan">Recommended repair plan.</param>
+public sealed record PredictiveMaintenanceSummary(
+    PredictiveInsight Insight,
+    MaintenancePlan ServicePlan,
+    MaintenancePlan RepairPlan);

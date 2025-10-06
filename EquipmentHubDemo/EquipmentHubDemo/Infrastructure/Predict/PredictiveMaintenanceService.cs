@@ -19,27 +19,60 @@ public sealed class PredictiveMaintenanceService : IPredictiveMaintenanceService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    public async Task<PredictiveMaintenanceSummary> GetSummaryAsync(string instrumentId, string metric, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(instrumentId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(metric);
+
+        var insight = await _diagnosticsService.GetInsightAsync(instrumentId, metric, cancellationToken).ConfigureAwait(false);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var servicePlan = CreateServicePlan(insight, now);
+        var repairPlan = CreateRepairPlan(insight, now);
+
+        return new PredictiveMaintenanceSummary(insight, servicePlan, repairPlan);
+    }
+
     public async Task<MaintenancePlan> ScheduleServiceAsync(string instrumentId, string metric, CancellationToken cancellationToken = default)
     {
-        var insight = await _diagnosticsService.GetInsightAsync(instrumentId, metric, cancellationToken).ConfigureAwait(false);
-        var daysUntilService = Math.Clamp(14 - (int)Math.Round(insight.FailureProbability * 10), 1, 30);
-        var scheduled = _timeProvider.GetUtcNow().UtcDateTime.AddDays(daysUntilService);
-        var notes = BuildNotes(insight, "service");
+        var summary = await GetSummaryAsync(instrumentId, metric, cancellationToken).ConfigureAwait(false);
 
-        _logger.LogInformation("Scheduled predictive service for {Instrument}/{Metric} on {Date}.", instrumentId, metric, scheduled);
-        return new MaintenancePlan(instrumentId, metric, "Service", scheduled, notes);
+        _logger.LogInformation(
+            "Scheduled predictive service for {Instrument}/{Metric} on {Date}.",
+            instrumentId,
+            metric,
+            summary.ServicePlan.ScheduledFor);
+
+        return summary.ServicePlan;
     }
 
     public async Task<MaintenancePlan> ScheduleRepairAsync(string instrumentId, string metric, CancellationToken cancellationToken = default)
     {
-        var insight = await _diagnosticsService.GetInsightAsync(instrumentId, metric, cancellationToken).ConfigureAwait(false);
+        var summary = await GetSummaryAsync(instrumentId, metric, cancellationToken).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Scheduled predictive repair for {Instrument}/{Metric} on {Date}.",
+            instrumentId,
+            metric,
+            summary.RepairPlan.ScheduledFor);
+
+        return summary.RepairPlan;
+    }
+
+    private static MaintenancePlan CreateServicePlan(PredictiveInsight insight, DateTime now)
+    {
+        var daysUntilService = Math.Clamp(14 - (int)Math.Round(insight.FailureProbability * 10), 1, 30);
+        var scheduled = now.AddDays(daysUntilService);
+        var notes = BuildNotes(insight, "service");
+        return new MaintenancePlan(insight.InstrumentId, insight.Metric, "Service", scheduled, notes);
+    }
+
+    private static MaintenancePlan CreateRepairPlan(PredictiveInsight insight, DateTime now)
+    {
         var urgency = insight.FailureProbability;
         var daysUntilRepair = Math.Clamp((int)Math.Ceiling(7 * (1 - urgency)), 1, 14);
-        var scheduled = _timeProvider.GetUtcNow().UtcDateTime.AddDays(daysUntilRepair);
+        var scheduled = now.AddDays(daysUntilRepair);
         var notes = BuildNotes(insight, "repair");
-
-        _logger.LogInformation("Scheduled predictive repair for {Instrument}/{Metric} on {Date}.", instrumentId, metric, scheduled);
-        return new MaintenancePlan(instrumentId, metric, "Repair", scheduled, notes);
+        return new MaintenancePlan(insight.InstrumentId, insight.Metric, "Repair", scheduled, notes);
     }
 
     private static string BuildNotes(PredictiveInsight insight, string action)

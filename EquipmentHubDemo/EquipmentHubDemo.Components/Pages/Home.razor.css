@@ -80,3 +80,172 @@
         width: 100%;
     }
 }
+
+.status-section {
+    margin-top: 3rem;
+    margin-bottom: 2rem;
+}
+
+.status-section__title {
+    margin-bottom: 0.25rem;
+}
+
+.status-section__subtitle {
+    margin-bottom: 1.5rem;
+    max-width: 60rem;
+}
+
+.status-panels {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.5rem;
+}
+
+.status-panel {
+    background-color: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 0.75rem;
+    box-shadow: 0 0.75rem 1.5rem rgba(31, 41, 55, 0.08);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.status-panel__header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.status-panel__title {
+    margin: 0;
+}
+
+.status-panel__empty {
+    margin: 0;
+}
+
+.predictive-list,
+.monitoring-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.predictive-card,
+.monitoring-card {
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    border-radius: 0.75rem;
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    background-image: linear-gradient(145deg, rgba(99, 102, 241, 0.06), rgba(129, 140, 248, 0.05));
+}
+
+.predictive-card__header,
+.monitoring-card__header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.predictive-card__title,
+.monitoring-card__title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.predictive-card__metric,
+.monitoring-card__metric {
+    display: inline-block;
+    margin-left: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: rgba(55, 65, 81, 0.8);
+}
+
+.predictive-card__probability {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #4338ca;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.predictive-card__details,
+.monitoring-card__details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 0.75rem 1.5rem;
+    margin: 0;
+}
+
+.predictive-card__detail,
+.monitoring-card__detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.predictive-card__detail dt,
+.monitoring-card__detail dt {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(55, 65, 81, 0.7);
+    margin: 0;
+}
+
+.predictive-card__detail dd,
+.monitoring-card__detail dd {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.predictive-card__plan-date {
+    display: block;
+    font-weight: 600;
+}
+
+.predictive-card__plan-notes {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.85rem;
+}
+
+.status-chip {
+    align-self: flex-start;
+    padding: 0.35rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.status-chip--nominal {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #15803d;
+}
+
+.status-chip--stale {
+    background-color: rgba(249, 115, 22, 0.18);
+    color: #c2410c;
+}
+
+.status-chip--missing {
+    background-color: rgba(248, 113, 113, 0.18);
+    color: #b91c1c;
+}
+
+@media (max-width: 991.98px) {
+    .status-panels {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
