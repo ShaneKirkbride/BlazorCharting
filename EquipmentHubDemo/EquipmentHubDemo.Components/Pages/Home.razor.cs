@@ -4,6 +4,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using EquipmentHubDemo.Components.Streaming;
+using EquipmentHubDemo.Domain.Monitoring;
+using EquipmentHubDemo.Domain.Predict;
+using EquipmentHubDemo.Domain.Status;
 using Microsoft.AspNetCore.Components;
 
 namespace EquipmentHubDemo.Components.Pages;
@@ -16,13 +19,21 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
     private readonly List<string> _availableKeys = new();
 
     private IReadOnlyList<string> _selectedKeys = Array.Empty<string>();
+    private IReadOnlyList<PredictiveStatus> _predictiveStatuses = Array.Empty<PredictiveStatus>();
+    private IReadOnlyList<MonitoringStatus> _monitoringStatuses = Array.Empty<MonitoringStatus>();
 
     private CancellationTokenSource? _cts;
     private Task? _pollingTask;
     private CancellationTokenSource? _keyRefreshCts;
     private Task? _keyRefreshTask;
+    private CancellationTokenSource? _statusRefreshCts;
+    private Task? _statusRefreshTask;
 
     private string? error;
+    private string? statusError;
+
+    [Inject]
+    public required ISystemStatusClient StatusClient { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -36,6 +47,7 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
         }
 
         EnsureKeyRefreshLoop();
+        EnsureStatusRefreshLoop();
     }
 
     private async Task StartPollingAsync()
@@ -143,6 +155,7 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
     {
         await StopPollingAsync();
         await StopKeyRefreshLoopAsync();
+        await StopStatusRefreshLoopAsync();
     }
 
     private async Task<bool> TryLoadKeysAsync(bool initialLoad)
@@ -188,6 +201,17 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
 
         _keyRefreshCts = new CancellationTokenSource();
         _keyRefreshTask = RefreshKeysLoopAsync(_keyRefreshCts.Token);
+    }
+
+    private void EnsureStatusRefreshLoop()
+    {
+        if (_statusRefreshTask is not null)
+        {
+            return;
+        }
+
+        _statusRefreshCts = new CancellationTokenSource();
+        _statusRefreshTask = RefreshStatusLoopAsync(_statusRefreshCts.Token);
     }
 
     private async Task RefreshKeysLoopAsync(CancellationToken ct)
@@ -300,6 +324,30 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
         }
     }
 
+    private async Task StopStatusRefreshLoopAsync()
+    {
+        if (_statusRefreshTask is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _statusRefreshCts?.Cancel();
+            await _statusRefreshTask;
+        }
+        catch (OperationCanceledException)
+        {
+            // expected on cancellation
+        }
+        finally
+        {
+            _statusRefreshCts?.Dispose();
+            _statusRefreshCts = null;
+            _statusRefreshTask = null;
+        }
+    }
+
     private IEnumerable<ChartStream> GetActiveStreams()
         => _streamManager.GetActiveStreams(_selectedKeys);
 
@@ -343,4 +391,118 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
 
         return selectionChanged;
     }
+
+    private async Task RefreshStatusLoopAsync(CancellationToken ct)
+    {
+        var delay = TimeSpan.FromSeconds(5);
+        var firstIteration = true;
+
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                if (!firstIteration)
+                {
+                    await Task.Delay(delay, ct);
+                }
+
+                firstIteration = false;
+
+                IReadOnlyList<PredictiveStatus> predictive;
+                IReadOnlyList<MonitoringStatus> monitoring;
+
+                try
+                {
+                    var predictiveTask = StatusClient.GetPredictiveStatusesAsync(ct);
+                    var monitoringTask = StatusClient.GetMonitoringStatusesAsync(ct);
+
+                    predictive = await predictiveTask.ConfigureAwait(false);
+                    monitoring = await monitoringTask.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    await InvokeAsync(() =>
+                    {
+                        statusError = "Status refresh failed: " + ex.Message;
+                        StateHasChanged();
+                    });
+                    continue;
+                }
+
+                await InvokeAsync(() =>
+                {
+                    _predictiveStatuses = predictive ?? Array.Empty<PredictiveStatus>();
+                    _monitoringStatuses = monitoring ?? Array.Empty<MonitoringStatus>();
+                    statusError = null;
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // loop cancelled -> exit silently
+        }
+        finally
+        {
+            await InvokeAsync(() =>
+            {
+                _statusRefreshTask = null;
+                _statusRefreshCts?.Dispose();
+                _statusRefreshCts = null;
+            });
+        }
+    }
+
+    private IReadOnlyList<PredictiveStatus> GetPredictiveStatuses() => _predictiveStatuses;
+
+    private IReadOnlyList<MonitoringStatus> GetMonitoringStatuses() => _monitoringStatuses;
+
+    private static string FormatAge(TimeSpan? age)
+    {
+        if (age is null)
+        {
+            return "n/a";
+        }
+
+        var value = age.Value;
+        if (value < TimeSpan.Zero)
+        {
+            value = TimeSpan.Zero;
+        }
+
+        if (value.TotalSeconds < 60)
+        {
+            return $"{Math.Round(value.TotalSeconds)}s ago";
+        }
+
+        if (value.TotalMinutes < 60)
+        {
+            return $"{Math.Round(value.TotalMinutes)}m ago";
+        }
+
+        if (value.TotalHours < 24)
+        {
+            return $"{Math.Round(value.TotalHours)}h ago";
+        }
+
+        return $"{Math.Round(value.TotalDays)}d ago";
+    }
+
+    private static string GetHealthCss(MonitoringHealth health) => health switch
+    {
+        MonitoringHealth.Nominal => "status-chip status-chip--nominal",
+        MonitoringHealth.Stale => "status-chip status-chip--stale",
+        _ => "status-chip status-chip--missing"
+    };
+
+    private static string DescribeHealth(MonitoringHealth health) => health switch
+    {
+        MonitoringHealth.Nominal => "Nominal",
+        MonitoringHealth.Stale => "Stale",
+        _ => "No Data"
+    };
 }

@@ -37,17 +37,37 @@ public sealed class PredictiveMaintenanceServiceTests
         Assert.Contains("μ=30.00", plan.Notes);
         Assert.Contains("σ=5.00", plan.Notes);
     }
+
+    [Fact]
+    public async Task GetSummaryAsync_ComputesPlansAndCachesInsight()
+    {
+        var diagnostics = new StubPredictiveDiagnosticsService();
+        var insightTimestamp = new DateTime(2024, 11, 5, 8, 0, 0, DateTimeKind.Utc);
+        diagnostics.SetInsight(new PredictiveInsight("IN-700", "Temperature", 0.25, insightTimestamp, 15, 1.5));
+        var now = new DateTimeOffset(2024, 11, 05, 12, 0, 0, TimeSpan.Zero);
+        var service = new PredictiveMaintenanceService(diagnostics, new TestTimeProvider(now), NullLogger<PredictiveMaintenanceService>.Instance);
+
+        var summary = await service.GetSummaryAsync("IN-700", "Temperature", CancellationToken.None);
+
+        Assert.Equal(1, diagnostics.CallCount);
+        Assert.Equal(now.UtcDateTime.AddDays(12), summary.ServicePlan.ScheduledFor);
+        Assert.Equal(now.UtcDateTime.AddDays(6), summary.RepairPlan.ScheduledFor);
+        Assert.Same(summary.Insight, diagnostics.GetInsight("IN-700", "Temperature"));
+    }
 }
 
 internal sealed class StubPredictiveDiagnosticsService : IPredictiveDiagnosticsService
 {
     private readonly Dictionary<(string InstrumentId, string Metric), PredictiveInsight> _insights = new();
 
+    public int CallCount { get; private set; }
+
     public void SetInsight(PredictiveInsight insight)
         => _insights[(insight.InstrumentId, insight.Metric)] = insight;
 
     public Task<PredictiveInsight> GetInsightAsync(string instrumentId, string metric, CancellationToken cancellationToken = default)
     {
+        CallCount++;
         if (_insights.TryGetValue((instrumentId, metric), out var insight))
         {
             return Task.FromResult(insight);
@@ -55,4 +75,6 @@ internal sealed class StubPredictiveDiagnosticsService : IPredictiveDiagnosticsS
 
         throw new InvalidOperationException($"No insight registered for {instrumentId}/{metric}.");
     }
+
+    public PredictiveInsight GetInsight(string instrumentId, string metric) => _insights[(instrumentId, metric)];
 }

@@ -5,6 +5,9 @@ using Bunit;
 using EquipmentHubDemo.Components.Pages;
 using EquipmentHubDemo.Domain;
 using EquipmentHubDemo.Domain.Live;
+using EquipmentHubDemo.Domain.Monitoring;
+using EquipmentHubDemo.Domain.Predict;
+using EquipmentHubDemo.Domain.Status;
 using Microsoft.AspNetCore.Components.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -16,6 +19,7 @@ public sealed class RouterConfigurationTests : TestContext
     public RouterConfigurationTests()
     {
         Services.AddSingleton<ILiveMeasurementClient>(new NoopLiveMeasurementClient());
+        Services.AddSingleton<ISystemStatusClient>(new StubSystemStatusClient());
     }
 
     [Fact]
@@ -55,5 +59,14 @@ public sealed class RouterConfigurationTests : TestContext
 
         public Task<IReadOnlyList<PointDto>> GetMeasurementsAsync(string key, long sinceTicks, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<PointDto>>(Array.Empty<PointDto>());
+    }
+
+    private sealed class StubSystemStatusClient : ISystemStatusClient
+    {
+        public Task<IReadOnlyList<PredictiveStatus>> GetPredictiveStatusesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<PredictiveStatus>>(Array.Empty<PredictiveStatus>());
+
+        public Task<IReadOnlyList<MonitoringStatus>> GetMonitoringStatusesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<MonitoringStatus>>(Array.Empty<MonitoringStatus>());
     }
 }

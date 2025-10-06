@@ -6,6 +6,9 @@ using Bunit;
 using EquipmentHubDemo.Components.Pages;
 using EquipmentHubDemo.Domain;
 using EquipmentHubDemo.Domain.Live;
+using EquipmentHubDemo.Domain.Monitoring;
+using EquipmentHubDemo.Domain.Predict;
+using EquipmentHubDemo.Domain.Status;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -13,6 +16,11 @@ namespace EquipmentHubDemo.Components.Tests;
 
 public sealed class HomePageTests : TestContext
 {
+    public HomePageTests()
+    {
+        Services.AddSingleton<ISystemStatusClient>(new StubSystemStatusClient());
+    }
+
     [Fact]
     public void Home_RendersChartIsland_WhenKeysAreAvailable()
     {
@@ -166,5 +174,14 @@ public sealed class HomePageTests : TestContext
 
         private static IEnumerable<IReadOnlyList<PointDto>> Clone(IEnumerable<IReadOnlyList<PointDto>> source)
             => source.Select(list => (IReadOnlyList<PointDto>)list.Select(p => new PointDto { X = p.X, Y = p.Y }).ToArray());
+    }
+
+    private sealed class StubSystemStatusClient : ISystemStatusClient
+    {
+        public Task<IReadOnlyList<PredictiveStatus>> GetPredictiveStatusesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<PredictiveStatus>>(Array.Empty<PredictiveStatus>());
+
+        public Task<IReadOnlyList<MonitoringStatus>> GetMonitoringStatusesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<MonitoringStatus>>(Array.Empty<MonitoringStatus>());
     }
 }

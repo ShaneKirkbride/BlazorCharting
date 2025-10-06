@@ -14,9 +14,11 @@ using EquipmentHubDemo.Infrastructure.Control;
 using EquipmentHubDemo.Instrumentation;
 using EquipmentHubDemo.Infrastructure.Predict;
 using EquipmentHubDemo.Live;
+using EquipmentHubDemo.Domain.Status;
 using EquipmentHubDemo.Workers;
 using EquipmentHubDemo.Components.Pages;
 using Microsoft.Net.Http.Headers;
+using EquipmentHubDemo.Status;
 
 static bool IsHttpScheme(string? scheme) =>
     string.Equals(scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
@@ -38,6 +40,7 @@ builder.Services.Configure<ApiClientOptions>(options =>
     builder.Configuration.GetSection(ApiClientOptions.SectionName).Bind(options));
 builder.Services.AddScoped<IApiBaseUriProvider, ApiBaseUriProvider>();
 builder.Services.AddScoped<ILiveMeasurementClient, HttpLiveMeasurementClient>();
+builder.Services.AddScoped<ISystemStatusClient, HttpSystemStatusClient>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<Random>(_ => Random.Shared);
 
@@ -134,6 +137,8 @@ builder.Services.AddSingleton<IInstrumentConfigurationService, ScenarioConfigura
 builder.Services.AddSingleton<IInstrumentCalibrationService, InstrumentCalibrationService>();
 builder.Services.AddSingleton<IRfPathService, RfPathService>();
 builder.Services.AddSingleton<INetworkTrafficOptimizer, KubernetesNetworkTrafficOptimizer>();
+builder.Services.AddScoped<PredictiveStatusProvider>();
+builder.Services.AddScoped<MonitoringStatusProvider>();
 
 // Background services (broker + workers)
 builder.Services.AddHostedService<ZmqBrokerService>();
@@ -171,6 +176,18 @@ app.MapGet("/api/live", (string key, long? sinceTicks, ILiveCache cache) =>
         result = pts.TakeLast(500).Select(p => new { x = p.X, y = p.Y }); // initial snapshot
 
     return Results.Json(result);
+});
+
+app.MapGet("/api/predictive/status", async (PredictiveStatusProvider provider, CancellationToken ct) =>
+{
+    var statuses = await provider.GetStatusesAsync(ct).ConfigureAwait(false);
+    return Results.Json(statuses);
+});
+
+app.MapGet("/api/monitoring/status", (MonitoringStatusProvider provider) =>
+{
+    var statuses = provider.GetStatuses();
+    return Results.Json(statuses);
 });
 
 // Optional: silence favicon 404s (if you only ship a PNG/SVG)
