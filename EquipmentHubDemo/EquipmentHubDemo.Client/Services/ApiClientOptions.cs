@@ -24,4 +24,11 @@ public sealed class ApiClientOptions
         "https://localhost:7118/",
         "http://localhost:5026/"
     };
+
+    /// <summary>
+    /// Indicates whether <see cref="LoopbackFallbackAddresses"/> should be probed when the application is hosted on a
+    /// loopback address. Disabling this avoids cross-origin probes when the client is served standalone without the
+    /// companion ASP.NET Core host.
+    /// </summary>
+    public bool EnableLoopbackFallbacks { get; init; } = true;
 }
