@@ -130,43 +130,43 @@
         </div>
     }
 </section>
-else
-{
+
+@{
     var activeStreams = GetActiveStreams().ToList();
     var placeholderCount = Math.Max(0, MaxChartsDisplayed - activeStreams.Count);
-
-    <div class="chart-grid__wrapper">
-        @if (activeStreams.Count == 0)
-        {
-            <div class="chart-grid__empty alert alert-info" role="status">
-                Waiting for live data…
-            </div>
-        }
-        else
-        {
-            <div class="chart-grid" role="list">
-                @foreach (var stream in activeStreams)
-                {
-                    <div class="chart-grid__cell" role="listitem">
-                        <div class="chart-grid__card">
-                            <h6 class="chart-grid__title text-muted">@stream.Key</h6>
-                            <ChartIsland Points="stream.Points"
-                                         Title="stream.Key" />
-                        </div>
-                    </div>
-                }
-
-                @for (var i = 0; i < placeholderCount; i++)
-                {
-                    <div class="chart-grid__cell" role="listitem">
-                        <div class="chart-grid__card chart-grid__card--placeholder">
-                            <div class="chart-grid__placeholder text-muted">
-                                Awaiting stream…
-                            </div>
-                        </div>
-                    </div>
-                }
-            </div>
-        }
-    </div>
 }
+
+<div class="chart-grid__wrapper">
+    @if (activeStreams.Count == 0)
+    {
+        <div class="chart-grid__empty alert alert-info" role="status">
+            Waiting for live data…
+        </div>
+    }
+    else
+    {
+        <div class="chart-grid" role="list">
+            @foreach (var stream in activeStreams)
+            {
+                <div class="chart-grid__cell" role="listitem">
+                    <div class="chart-grid__card">
+                        <h6 class="chart-grid__title text-muted">@stream.Key</h6>
+                        <ChartIsland Points="stream.Points"
+                                     Title="stream.Key" />
+                    </div>
+                </div>
+            }
+
+            @for (var i = 0; i < placeholderCount; i++)
+            {
+                <div class="chart-grid__cell" role="listitem">
+                    <div class="chart-grid__card chart-grid__card--placeholder">
+                        <div class="chart-grid__placeholder text-muted">
+                            Awaiting stream…
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>

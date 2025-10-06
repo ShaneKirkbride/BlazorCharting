@@ -35,7 +35,8 @@ public sealed class ApiBaseUriProvider : IApiBaseUriProvider
             }
         }
 
-        var configured = options?.Value?.BaseAddresses ?? Array.Empty<string>();
+        var optionsValue = options?.Value;
+        var configured = optionsValue?.BaseAddresses ?? Array.Empty<string>();
         foreach (var address in configured)
         {
             if (Uri.TryCreate(address, UriKind.Absolute, out var uri))
@@ -48,9 +49,10 @@ public sealed class ApiBaseUriProvider : IApiBaseUriProvider
         {
             TryAdd(navBase);
 
-            if (navBase.IsLoopback)
+            var enableLoopbackFallbacks = optionsValue?.EnableLoopbackFallbacks ?? true;
+            if (navBase.IsLoopback && enableLoopbackFallbacks)
             {
-                var loopbackCandidates = options?.Value?.LoopbackFallbackAddresses ?? Array.Empty<string>();
+                var loopbackCandidates = optionsValue?.LoopbackFallbackAddresses ?? Array.Empty<string>();
                 foreach (var candidate in loopbackCandidates)
                 {
                     if (Uri.TryCreate(candidate, UriKind.Absolute, out var loopback))
