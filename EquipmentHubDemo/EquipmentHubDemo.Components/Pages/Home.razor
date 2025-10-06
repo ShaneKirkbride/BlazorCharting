@@ -17,10 +17,8 @@
 }
 else
 {
-    @{
-        var activeStreams = GetActiveStreams().ToList();
-        var placeholderCount = Math.Max(0, MaxChartsDisplayed - activeStreams.Count);
-    }
+    var activeStreams = GetActiveStreams().ToList();
+    var placeholderCount = Math.Max(0, MaxChartsDisplayed - activeStreams.Count);
 
     <div class="chart-grid__wrapper">
         @if (activeStreams.Count == 0)
