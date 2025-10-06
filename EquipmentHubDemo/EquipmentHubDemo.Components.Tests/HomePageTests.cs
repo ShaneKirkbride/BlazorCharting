@@ -77,23 +77,23 @@ public sealed class HomePageTests : TestContext
         {
             Assert.True(measurementClient.MeasurementRequests.Count > 0, "should request live measurements");
 
-            var badge = cut.Find("span.badge").TextContent;
-            Assert.Contains("Measurements received", badge);
-            Assert.Contains("1", badge);
-
             var chartPoints = cut.FindComponent<ChartIsland>().Instance;
             Assert.NotNull(chartPoints);
         }, timeout: TimeSpan.FromSeconds(5));
     }
 
     [Fact]
-    public void Home_RendersUpToThreeChartsByDefault()
+    public void Home_RendersUpToNineChartsByDefault()
     {
         // Arrange
         var measurementClient = new StubLiveMeasurementClient(
             keysSequence: new[]
             {
-                new[] { "Line A", "Line B", "Line C", "Line D" }
+                new[]
+                {
+                    "Line A", "Line B", "Line C", "Line D", "Line E",
+                    "Line F", "Line G", "Line H", "Line I", "Line J", "Line K"
+                }
             },
             measurementsSequence: new IReadOnlyList<PointDto>[]
             {
@@ -109,12 +109,14 @@ public sealed class HomePageTests : TestContext
         cut.WaitForAssertion(() =>
         {
             var chartIslands = cut.FindComponents<ChartIsland>();
-            Assert.Equal(3, chartIslands.Count);
+            Assert.Equal(9, chartIslands.Count);
 
-            var titles = cut.FindAll("h6.card-title").Select(e => e.TextContent.Trim()).ToList();
+            var titles = cut.FindAll("h6.chart-grid__title").Select(e => e.TextContent.Trim()).ToList();
             Assert.Contains("Line A", titles);
             Assert.Contains("Line B", titles);
             Assert.Contains("Line C", titles);
+            Assert.Contains("Line I", titles);
+            Assert.DoesNotContain("Line J", titles);
         }, timeout: TimeSpan.FromSeconds(2));
     }
 

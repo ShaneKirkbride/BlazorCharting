@@ -1,18 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using EquipmentHubDemo.Components.Streaming;
 using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Components.Web;
 
 namespace EquipmentHubDemo.Components.Pages;
 
 public sealed partial class Home : ComponentBase, IAsyncDisposable
 {
-    private const int MaxChartsDisplayed = 3;
+    private const int MaxChartsDisplayed = 9;
 
     private readonly ChartStreamManager _streamManager = new();
     private readonly List<string> _availableKeys = new();
@@ -24,15 +22,7 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
     private CancellationTokenSource? _keyRefreshCts;
     private Task? _keyRefreshTask;
 
-    private bool running = true;
     private string? error;
-    private string? selectionWarning;
-
-    private IReadOnlyList<string> AvailableKeys => _availableKeys;
-
-    private long TotalReceived => _streamManager.TotalReceived;
-
-    private int ActiveBufferCount => _streamManager.CountActivePoints(_selectedKeys);
 
     protected override async Task OnInitializedAsync()
     {
@@ -46,19 +36,6 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
         }
 
         EnsureKeyRefreshLoop();
-    }
-
-    private async Task ToggleAsync()
-    {
-        running = !running;
-        if (running)
-        {
-            await StartPollingAsync();
-        }
-        else
-        {
-            await StopPollingAsync();
-        }
     }
 
     private async Task StartPollingAsync()
@@ -111,11 +88,6 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
             using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
             while (await timer.WaitForNextTickAsync(ct))
             {
-                if (!running)
-                {
-                    continue;
-                }
-
                 try
                 {
                     var keysSnapshot = _selectedKeys;
@@ -193,14 +165,11 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
 
         error = null;
 
-        UpdateSelectionAfterKeyRefresh(ensureSelection: initialLoad);
+        var selectionChanged = UpdateSelectionFromAvailableKeys();
 
-        if (running)
+        if (initialLoad || selectionChanged)
         {
-            if (initialLoad)
-            {
-                await StartPollingAsync();
-            }
+            await StartPollingAsync();
         }
         else
         {
@@ -279,9 +248,9 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
 
                     error = null;
 
-                    var selectionChanged = UpdateSelectionAfterKeyRefresh(ensureSelection: !hadKeysBefore);
+                    var selectionChanged = UpdateSelectionFromAvailableKeys();
 
-                    if (running && (selectionChanged || !hadKeysBefore))
+                    if (selectionChanged || !hadKeysBefore)
                     {
                         await StartPollingAsync();
                     }
@@ -331,72 +300,42 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
         }
     }
 
-    private async Task OnKeyToggledAsync(string key, ChangeEventArgs e)
-    {
-        var isChecked = e.Value is bool boolean && boolean;
-
-        if (isChecked)
-        {
-            if (_selectedKeys.Contains(key, StringComparer.Ordinal))
-            {
-                return;
-            }
-
-            if (_selectedKeys.Count >= MaxChartsDisplayed)
-            {
-                selectionWarning = $"You can display up to {MaxChartsDisplayed} charts at a time.";
-                await InvokeAsync(StateHasChanged);
-                return;
-            }
-
-            selectionWarning = null;
-            _selectedKeys = _selectedKeys.Concat(new[] { key }).ToList();
-        }
-        else
-        {
-            if (!_selectedKeys.Contains(key, StringComparer.Ordinal))
-            {
-                return;
-            }
-
-            selectionWarning = null;
-            _selectedKeys = _selectedKeys.Where(k => !string.Equals(k, key, StringComparison.Ordinal)).ToList();
-        }
-
-        _streamManager.EnsureSelection(_selectedKeys);
-
-        if (running)
-        {
-            await StartPollingAsync();
-        }
-        else
-        {
-            StateHasChanged();
-        }
-    }
-
     private IEnumerable<ChartStream> GetActiveStreams()
         => _streamManager.GetActiveStreams(_selectedKeys);
 
-    private bool UpdateSelectionAfterKeyRefresh(bool ensureSelection)
+    private bool UpdateSelectionFromAvailableKeys()
     {
-        var sanitizedSelection = _selectedKeys
-            .Where(key => _availableKeys.Contains(key, StringComparer.Ordinal))
-            .ToList();
+        var sanitizedSelection = new List<string>(MaxChartsDisplayed);
+
+        foreach (var key in _selectedKeys)
+        {
+            if (sanitizedSelection.Count >= MaxChartsDisplayed)
+            {
+                break;
+            }
+
+            if (_availableKeys.Contains(key, StringComparer.Ordinal)
+                && !sanitizedSelection.Contains(key, StringComparer.Ordinal))
+            {
+                sanitizedSelection.Add(key);
+            }
+        }
+
+        foreach (var key in _availableKeys)
+        {
+            if (sanitizedSelection.Count >= MaxChartsDisplayed)
+            {
+                break;
+            }
+
+            if (!sanitizedSelection.Contains(key, StringComparer.Ordinal))
+            {
+                sanitizedSelection.Add(key);
+            }
+        }
 
         var selectionChanged = sanitizedSelection.Count != _selectedKeys.Count
             || !_selectedKeys.SequenceEqual(sanitizedSelection, StringComparer.Ordinal);
-
-        if (ensureSelection && sanitizedSelection.Count == 0 && _availableKeys.Count > 0)
-        {
-            sanitizedSelection = _availableKeys.Take(MaxChartsDisplayed).ToList();
-            selectionChanged = true;
-        }
-
-        if (selectionChanged)
-        {
-            selectionWarning = null;
-        }
 
         _selectedKeys = sanitizedSelection;
 
@@ -404,23 +343,4 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
 
         return selectionChanged;
     }
-
-    private static string CreateCheckboxId(string key)
-    {
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            return "key-unknown";
-        }
-
-        var builder = new StringBuilder("key-");
-        foreach (var ch in key)
-        {
-            builder.Append(char.IsLetterOrDigit(ch) ? char.ToLowerInvariant(ch) : '-');
-        }
-
-        return builder.ToString();
-    }
-
-    private bool IsSelected(string key)
-        => _selectedKeys.Contains(key, StringComparer.Ordinal);
 }
