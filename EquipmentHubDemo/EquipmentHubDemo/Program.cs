@@ -190,9 +190,6 @@ app.MapGet("/api/monitoring/status", (MonitoringStatusProvider provider) =>
     return Results.Json(statuses);
 });
 
-// Optional: silence favicon 404s (if you only ship a PNG/SVG)
-app.MapGet("/favicon.ico", () => Results.Redirect("/favicon.png"));
-
 // ---------- Razor Components endpoints ----------
 app.MapRazorComponents<App>()
    .AddInteractiveServerRenderMode()

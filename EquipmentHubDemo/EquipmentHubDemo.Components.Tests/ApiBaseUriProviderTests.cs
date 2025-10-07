@@ -51,6 +51,24 @@ public sealed class ApiBaseUriProviderTests
         Assert.Contains(uris, u => u.AbsoluteUri == "http://localhost:5026/");
     }
 
+    [Fact]
+    public void GetBaseUris_WhenLoopbackFallbacksDisabled_SuppressesFallbacks()
+    {
+        var options = Options.Create(new ApiClientOptions
+        {
+            BaseAddresses = new List<string>(),
+            EnableLoopbackFallbacks = false
+        });
+
+        var navigation = new TestNavigationManager("http://127.0.0.1:6000/");
+        var provider = new ApiBaseUriProvider(options, navigation);
+
+        var uris = provider.GetBaseUris();
+
+        Assert.Single(uris);
+        Assert.Equal("http://127.0.0.1:6000/", uris[0].AbsoluteUri);
+    }
+
     private sealed class TestNavigationManager : NavigationManager
     {
         public TestNavigationManager(string baseUri)
