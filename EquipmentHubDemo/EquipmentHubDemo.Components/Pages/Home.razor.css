@@ -10,6 +10,7 @@
     margin-bottom: 0;
 }
 
+/* Wrapper keeps content centered */
 .chart-grid__wrapper {
     display: flex;
     justify-content: center;
@@ -19,16 +20,18 @@
     box-sizing: border-box;
 }
 
+/* FIXED NxN GRID via CSS var --cols */
 .chart-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
     gap: 1.5rem;
     width: 100%;
-    max-width: 1200px;
+    max-width: 1200px; /* optional */
 }
 
 .chart-grid__cell {
     display: flex;
+    min-width: 0; /* prevents child overflow from breaking the grid */
 }
 
 .chart-grid__card {
@@ -71,18 +74,22 @@
     box-sizing: border-box;
 }
 
-@media (max-width: 1199.98px) {
+/* Optional responsiveness:
+   Keep strict NxN on desktops, but collapse to 2 cols or 1 col on phones if desired.
+   Adjust/remove these if you want to ALWAYS keep NxN. */
+@media (max-width: 991.98px) {
     .chart-grid {
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
-@media (max-width: 767.98px) {
+@media (max-width: 575.98px) {
     .chart-grid {
         grid-template-columns: minmax(0, 1fr);
     }
 }
 
+/* Status panels (kept from your original) */
 .status-section {
     margin-top: 3rem;
     margin-bottom: 2rem;
@@ -195,20 +202,20 @@
     gap: 0.25rem;
 }
 
-.predictive-card__detail dt,
-.monitoring-card__detail dt {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: rgba(55, 65, 81, 0.7);
-    margin: 0;
-}
+    .predictive-card__detail dt,
+    .monitoring-card__detail dt {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(55, 65, 81, 0.7);
+        margin: 0;
+    }
 
-.predictive-card__detail dd,
-.monitoring-card__detail dd {
-    margin: 0;
-    font-size: 0.95rem;
-}
+    .predictive-card__detail dd,
+    .monitoring-card__detail dd {
+        margin: 0;
+        font-size: 0.95rem;
+    }
 
 .predictive-card__plan-date {
     display: block;

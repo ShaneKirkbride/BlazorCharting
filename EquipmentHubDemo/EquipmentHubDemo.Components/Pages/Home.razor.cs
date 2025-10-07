@@ -13,7 +13,11 @@ namespace EquipmentHubDemo.Components.Pages;
 
 public sealed partial class Home : ComponentBase, IAsyncDisposable
 {
-    private const int MaxChartsDisplayed = 9;
+    // Define grid layout behavior (n x n charts)
+    private const int DefaultGridCols = 3; // change this for 2x2, 4x4, etc.
+    private int GridCols => DefaultGridCols;
+    private int MaxChartsDisplayed => GridCols * GridCols;
+
 
     private readonly ChartStreamManager _streamManager = new();
     private readonly List<string> _availableKeys = new();
