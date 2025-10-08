@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using EquipmentHubDemo.Components.Streaming;
+using EquipmentHubDemo.Domain;
 using EquipmentHubDemo.Domain.Monitoring;
 using EquipmentHubDemo.Domain.Predict;
 using EquipmentHubDemo.Domain.Status;
@@ -18,6 +19,12 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
     private int GridCols => DefaultGridCols;
     private int MaxChartsDisplayed => GridCols * GridCols;
 
+
+    private static readonly string[] PreferredMetrics =
+    {
+        "Power (240VAC)",
+        "Temperature"
+    };
 
     private readonly ChartStreamManager _streamManager = new();
     private readonly List<string> _availableKeys = new();
@@ -386,6 +393,11 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
             }
         }
 
+        foreach (var metric in PreferredMetrics)
+        {
+            EnsurePreferredKey(sanitizedSelection, metric);
+        }
+
         var selectionChanged = sanitizedSelection.Count != _selectedKeys.Count
             || !_selectedKeys.SequenceEqual(sanitizedSelection, StringComparer.Ordinal);
 
@@ -394,6 +406,54 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
         _streamManager.EnsureSelection(_selectedKeys);
 
         return selectionChanged;
+    }
+
+    private void EnsurePreferredKey(List<string> selection, string metric)
+    {
+        if (selection.Any(key => KeyMatchesMetric(key, metric)))
+        {
+            return;
+        }
+
+        var candidate = _availableKeys.FirstOrDefault(key => KeyMatchesMetric(key, metric));
+        if (candidate is null)
+        {
+            return;
+        }
+
+        if (selection.Count < MaxChartsDisplayed)
+        {
+            selection.Add(candidate);
+            return;
+        }
+
+        for (var i = selection.Count - 1; i >= 0; i--)
+        {
+            var existing = selection[i];
+            if (!IsPreferredKey(existing))
+            {
+                selection[i] = candidate;
+                return;
+            }
+        }
+    }
+
+    private static bool IsPreferredKey(string key)
+        => PreferredMetrics.Any(metric => KeyMatchesMetric(key, metric));
+
+    private static bool KeyMatchesMetric(string key, string metric)
+    {
+        if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(metric))
+        {
+            return false;
+        }
+
+        if (MeasureKey.TryParse(key, out var parsedKey))
+        {
+            return string.Equals(parsedKey.Metric, metric, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return key.Contains(metric, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task RefreshStatusLoopAsync(CancellationToken ct)
