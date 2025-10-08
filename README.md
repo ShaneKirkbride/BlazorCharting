@@ -43,7 +43,7 @@ dotnet run --project EquipmentHubDemo/EquipmentHubDemo/EquipmentHubDemo.csproj
 
 While the command is running:
 
-- The Razor Components UI and JSON endpoints bind to the default Kestrel ports (`http://localhost:5000`, `https://localhost:5001`).
+- The Razor Components UI and JSON endpoints bind to the development Kestrel ports (`http://localhost:5026`, `https://localhost:7118`).
 - The embedded ZeroMQ XSUB/XPUB proxy starts listening on `tcp://*:5556` / `tcp://*:5557` and background workers (broker, filter/store, TTL, and live subscriber services) begin processing.
 - LiteDB files (`data/measurements.db` and `data/diagnostics.db`) are created automatically the first time telemetry arrives. Leave this terminal open to keep the server online.
 
@@ -65,7 +65,7 @@ The agent will:
 
 1. Watch the agent logs—successful publishes display entries similar to `Published measurement for Instrument-01`.
 2. Check the hub terminal for messages from the filter worker confirming that it subscribed and stored diagnostics.
-3. Navigate to `https://localhost:5001` and verify the chart begins updating within a few seconds. You can also inspect `https://localhost:5001/api/live` to view the JSON payload the UI consumes.
+3. Navigate to `https://localhost:7118` and verify the chart begins updating within a few seconds. You can also inspect `https://localhost:7118/api/live` to view the JSON payload the UI consumes.
 
 If the chart stays empty, confirm that both processes are still running and that no firewall rules block `localhost` ZeroMQ traffic.
 
