@@ -20,6 +20,7 @@ internal sealed class MeasurementGenerator : IMeasurementGenerator
     private readonly Random _random;
     private readonly ILogger<MeasurementGenerator> _logger;
     private readonly ConcurrentDictionary<string, MonitorSchedule> _schedules;
+    private readonly ConcurrentDictionary<MeasureKey, SyntheticSeriesState> _syntheticSeries;
 
     public MeasurementGenerator(
         IOptions<AgentOptions> options,
@@ -46,6 +47,8 @@ internal sealed class MeasurementGenerator : IMeasurementGenerator
         {
             _schedules.TryAdd(instrument, MonitorSchedule.Create(now));
         }
+
+        _syntheticSeries = new ConcurrentDictionary<MeasureKey, SyntheticSeriesState>();
     }
 
     public IEnumerable<Measurement> CreateMeasurements(DateTime timestampUtc)
@@ -176,19 +179,20 @@ internal sealed class MeasurementGenerator : IMeasurementGenerator
         var key = new MeasureKey(instrumentId, trimmedMetric);
         var value = trimmedMetric.Length == 0
             ? GenerateFallbackValue(trimmedMetric)
-            : GenerateSyntheticValue(trimmedMetric, angle);
+            : GenerateSyntheticValue(key, angle);
 
         return new Measurement(key, value, timestampUtc);
     }
 
-    private double GenerateSyntheticValue(string metric, double angle)
+    private double GenerateSyntheticValue(MeasureKey key, double angle)
     {
-        if (string.Equals(metric, "Power (240VAC)", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(key.Metric, "Power (240VAC)", StringComparison.OrdinalIgnoreCase))
         {
-            return 240 + 5 * Math.Sin(angle) + 2 * _random.NextDouble();
+            var series = _syntheticSeries.GetOrAdd(key, _ => SyntheticSeriesState.Create(_random));
+            return series.NextPowerSample(angle, _random);
         }
 
-        return GenerateFallbackValue(metric);
+        return GenerateFallbackValue(key.Metric);
     }
 
     private double GenerateFallbackValue(string metric)
@@ -215,5 +219,43 @@ internal sealed class MeasurementGenerator : IMeasurementGenerator
                 NextTemperatureUtc = startUtc,
                 NextHumidityUtc = startUtc
             };
+    }
+
+    private sealed class SyntheticSeriesState
+    {
+        private double _phaseOffset;
+        private double _lowFrequencyPhase;
+        private double _drift;
+
+        private SyntheticSeriesState(double phaseOffset, double lowFrequencyPhase)
+        {
+            _phaseOffset = phaseOffset;
+            _lowFrequencyPhase = lowFrequencyPhase;
+        }
+
+        public static SyntheticSeriesState Create(Random random)
+        {
+            ArgumentNullException.ThrowIfNull(random);
+            return new SyntheticSeriesState(
+                phaseOffset: random.NextDouble() * Math.PI * 2,
+                lowFrequencyPhase: random.NextDouble() * Math.PI * 2);
+        }
+
+        public double NextPowerSample(double angle, Random random)
+        {
+            ArgumentNullException.ThrowIfNull(random);
+
+            _phaseOffset += 0.01 + random.NextDouble() * 0.015;
+            _lowFrequencyPhase += 0.002 + random.NextDouble() * 0.004;
+            _drift = Math.Clamp(_drift + (random.NextDouble() - 0.5) * 0.25, -6, 6);
+
+            var waveform = 240
+                + 7.5 * Math.Sin(angle + _phaseOffset)
+                + 3.0 * Math.Sin(_lowFrequencyPhase);
+
+            var jitter = (random.NextDouble() - 0.5) * 3.0;
+
+            return waveform + _drift + jitter;
+        }
     }
 }
