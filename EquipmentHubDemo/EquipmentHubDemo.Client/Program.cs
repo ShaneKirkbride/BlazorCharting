@@ -9,7 +9,8 @@ using System.Runtime.InteropServices.JavaScript;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
-await JSHost.ImportAsync("domHelpers", "./js/domHelpers.js");
+var domHelpersModuleUri = new Uri(new Uri(builder.HostEnvironment.BaseAddress), "js/domHelpers.js");
+await JSHost.ImportAsync("domHelpers", domHelpersModuleUri.AbsoluteUri);
 var spaHostExists = DomHelpers.HasSelector("#app");
 
 if (spaHostExists)
