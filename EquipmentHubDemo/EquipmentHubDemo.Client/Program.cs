@@ -5,11 +5,18 @@ using EquipmentHubDemo.Domain.Status;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.Extensions.Configuration;
+using System.Runtime.InteropServices.JavaScript;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
-builder.RootComponents.Add<EquipmentHubDemo.Client.Routes>("#app");
-builder.RootComponents.Add<HeadOutlet>("head::after");
+await JSHost.ImportAsync("domHelpers", "./js/domHelpers.js");
+var spaHostExists = DomHelpers.HasSelector("#app");
+
+if (spaHostExists)
+{
+    builder.RootComponents.Add<Routes>("#app");
+    builder.RootComponents.Add<HeadOutlet>("head::after");
+}
 
 builder.Services.Configure<ApiClientOptions>(options =>
     builder.Configuration.GetSection(ApiClientOptions.SectionName).Bind(options));
