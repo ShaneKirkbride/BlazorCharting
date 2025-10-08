@@ -39,7 +39,7 @@ public sealed class HomePageTests : TestContext
         Services.AddSingleton<ILiveMeasurementClient>(measurementClient);
 
         // Act
-        var cut = RenderComponent<Home>();
+        var cut = RenderHome();
 
         // Assert
         cut.WaitForAssertion(() =>
@@ -71,7 +71,7 @@ public sealed class HomePageTests : TestContext
         Services.AddSingleton<ILiveMeasurementClient>(measurementClient);
 
         // Act
-        var cut = RenderComponent<Home>();
+        var cut = RenderHome();
 
         // Ensure the live endpoint was polled.
         cut.WaitForAssertion(() =>
@@ -111,7 +111,7 @@ public sealed class HomePageTests : TestContext
         Services.AddSingleton<ILiveMeasurementClient>(measurementClient);
 
         // Act
-        var cut = RenderComponent<Home>();
+        var cut = RenderHome();
 
         // Assert
         cut.WaitForAssertion(() =>
@@ -158,7 +158,7 @@ public sealed class HomePageTests : TestContext
         Services.AddSingleton<ILiveMeasurementClient>(measurementClient);
 
         // Act
-        var cut = RenderComponent<Home>();
+        var cut = RenderHome();
 
         // Assert
         cut.WaitForAssertion(() =>
@@ -172,6 +172,9 @@ public sealed class HomePageTests : TestContext
             Assert.Equal(9, titles.Count);
         }, timeout: TimeSpan.FromSeconds(2));
     }
+
+    private IRenderedComponent<Home> RenderHome()
+        => RenderComponent<Home>(parameters => parameters.Add(p => p.ForceEnableLiveCharts, true));
 
     private sealed class StubLiveMeasurementClient : ILiveMeasurementClient
     {

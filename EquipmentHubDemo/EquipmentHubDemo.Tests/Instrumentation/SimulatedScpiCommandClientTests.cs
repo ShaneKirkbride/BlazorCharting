@@ -51,8 +51,8 @@ public sealed class SimulatedScpiCommandClientTests
         var tempValue = double.Parse(temperature, System.Globalization.CultureInfo.InvariantCulture);
         var humidValue = double.Parse(humidity, System.Globalization.CultureInfo.InvariantCulture);
 
-        Assert.InRange(tempValue, 24.5, 25.5);
-        Assert.InRange(humidValue, 39.0, 41.0);
+        Assert.InRange(tempValue, 23.0, 27.0);
+        Assert.InRange(humidValue, 35.5, 44.5);
     }
 
     [Fact]

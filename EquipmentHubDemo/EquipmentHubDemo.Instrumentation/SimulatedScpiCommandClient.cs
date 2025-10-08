@@ -63,7 +63,7 @@ public sealed class SimulatedScpiCommandClient : IScpiCommandClient
 
         _state = value.Instruments.ToDictionary(
             profile => profile.InstrumentId,
-            profile => new InstrumentState(profile),
+            profile => new InstrumentState(profile, _random),
             StringComparer.OrdinalIgnoreCase);
     }
 
@@ -91,8 +91,8 @@ public sealed class SimulatedScpiCommandClient : IScpiCommandClient
         {
             "*IDN?" => $"{state.Profile.Manufacturer},{state.Profile.Model},{state.Profile.SerialNumber},1.0",
             "SELF:CHECK?" => state.LastSelfCheck = $"0,OK,{DateTime.UtcNow:O}",
-            "MEAS:TEMP?" => FormatValue(state.Profile.BaseTemperatureCelsius + NextNoise(_temperatureNoiseAmplitude)),
-            "MEAS:HUM?" => FormatValue(state.Profile.BaseHumidityPercent + NextNoise(_humidityNoiseAmplitude)),
+            "MEAS:TEMP?" => FormatValue(state.NextTemperature(_temperatureNoiseAmplitude, _random)),
+            "MEAS:HUM?" => FormatValue(state.NextHumidity(_humidityNoiseAmplitude, _random)),
             "CAL:INIT" => state.MarkCalibrationStarted(),
             "CAL:STORE" => state.MarkCalibrationComplete(),
             "RF:NORM" => state.MarkRfNormalization(),
@@ -104,15 +104,21 @@ public sealed class SimulatedScpiCommandClient : IScpiCommandClient
 
     private string FormatValue(double value) => value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture);
 
-    private double NextNoise(double amplitude) => amplitude <= 0 ? 0 : (_random.NextDouble() * 2 - 1) * amplitude;
-
     private sealed class InstrumentState
     {
         private readonly ConcurrentDictionary<string, string> _parameters = new(StringComparer.OrdinalIgnoreCase);
+        private double _temperaturePhase;
+        private double _humidityPhase;
+        private double _temperatureDrift;
+        private double _humidityDrift;
 
-        public InstrumentState(SimulatedInstrumentProfile profile)
+        public InstrumentState(SimulatedInstrumentProfile profile, Random random)
         {
-            Profile = profile;
+            Profile = profile ?? throw new ArgumentNullException(nameof(profile));
+            ArgumentNullException.ThrowIfNull(random);
+
+            _temperaturePhase = random.NextDouble() * Math.PI * 2;
+            _humidityPhase = random.NextDouble() * Math.PI * 2;
         }
 
         public SimulatedInstrumentProfile Profile { get; }
@@ -122,6 +128,32 @@ public sealed class SimulatedScpiCommandClient : IScpiCommandClient
         public string? LastCalibration { get; private set; }
 
         public DateTime? LastNormalizationUtc { get; private set; }
+
+        public double NextTemperature(double amplitude, Random random)
+        {
+            ArgumentNullException.ThrowIfNull(random);
+
+            _temperaturePhase += 0.04 + random.NextDouble() * 0.03;
+            _temperatureDrift = CalculateDrift(_temperatureDrift, random, maxMagnitude: 1.2);
+
+            var waveform = Math.Sin(_temperaturePhase) * Math.Max(amplitude, 0);
+            var jitter = (random.NextDouble() - 0.5) * Math.Max(amplitude, 0.6);
+
+            return Profile.BaseTemperatureCelsius + waveform + _temperatureDrift + jitter;
+        }
+
+        public double NextHumidity(double amplitude, Random random)
+        {
+            ArgumentNullException.ThrowIfNull(random);
+
+            _humidityPhase += 0.03 + random.NextDouble() * 0.02;
+            _humidityDrift = CalculateDrift(_humidityDrift, random, maxMagnitude: 3.0);
+
+            var waveform = Math.Sin(_humidityPhase) * Math.Max(amplitude, 0);
+            var jitter = (random.NextDouble() - 0.5) * Math.Max(amplitude, 1.0);
+
+            return Profile.BaseHumidityPercent + waveform + _humidityDrift + jitter;
+        }
 
         public string ApplyConfiguration(string command)
         {
@@ -160,6 +192,13 @@ public sealed class SimulatedScpiCommandClient : IScpiCommandClient
         {
             var normalized = LastNormalizationUtc.HasValue && DateTime.UtcNow - LastNormalizationUtc < TimeSpan.FromHours(12);
             return normalized ? "PASS" : "WARN";
+        }
+
+        private static double CalculateDrift(double current, Random random, double maxMagnitude)
+        {
+            ArgumentNullException.ThrowIfNull(random);
+            var nudged = current + (random.NextDouble() - 0.5) * 0.2;
+            return Math.Clamp(nudged * 0.98, -Math.Abs(maxMagnitude), Math.Abs(maxMagnitude));
         }
     }
 }

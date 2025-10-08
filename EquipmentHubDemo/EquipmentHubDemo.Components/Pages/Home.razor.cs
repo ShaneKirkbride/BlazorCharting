@@ -46,8 +46,21 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
     [Inject]
     public required ISystemStatusClient StatusClient { get; set; }
 
+    [Parameter]
+    public bool ForceEnableLiveCharts { get; set; }
+
+    private bool SupportsLiveCharts => ForceEnableLiveCharts || OperatingSystem.IsBrowser();
+
     protected override async Task OnInitializedAsync()
     {
+        EnsureStatusRefreshLoop();
+
+        if (!SupportsLiveCharts)
+        {
+            error = "Live charts are available only when running the WebAssembly client.";
+            return;
+        }
+
         try
         {
             await TryLoadKeysAsync(initialLoad: true);
@@ -58,7 +71,6 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
         }
 
         EnsureKeyRefreshLoop();
-        EnsureStatusRefreshLoop();
     }
 
     private async Task StartPollingAsync()
