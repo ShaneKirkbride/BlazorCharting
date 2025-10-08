@@ -128,6 +128,51 @@ public sealed class HomePageTests : TestContext
         }, timeout: TimeSpan.FromSeconds(2));
     }
 
+    [Fact]
+    public void Home_PrioritizesPowerAndTemperatureCharts()
+    {
+        // Arrange
+        var measurementClient = new StubLiveMeasurementClient(
+            keysSequence: new[]
+            {
+                new[]
+                {
+                    "IN-1:Heartbeat",
+                    "IN-1:SelfCheck",
+                    "IN-1:Vibration",
+                    "IN-1:Humidity",
+                    "IN-1:Flow",
+                    "IN-1:Pressure",
+                    "IN-1:Noise",
+                    "IN-1:Voltage",
+                    "IN-1:Speed",
+                    "IN-1:Power (240VAC)",
+                    "IN-1:Temperature"
+                }
+            },
+            measurementsSequence: new IReadOnlyList<PointDto>[]
+            {
+                Array.Empty<PointDto>()
+            });
+
+        Services.AddSingleton<ILiveMeasurementClient>(measurementClient);
+
+        // Act
+        var cut = RenderComponent<Home>();
+
+        // Assert
+        cut.WaitForAssertion(() =>
+        {
+            var titles = cut.FindAll("h6.chart-grid__title")
+                .Select(e => e.TextContent.Trim())
+                .ToList();
+
+            Assert.Contains("IN-1:Power (240VAC)", titles);
+            Assert.Contains("IN-1:Temperature", titles);
+            Assert.Equal(9, titles.Count);
+        }, timeout: TimeSpan.FromSeconds(2));
+    }
+
     private sealed class StubLiveMeasurementClient : ILiveMeasurementClient
     {
         private readonly Queue<IReadOnlyList<string>> _keys;
