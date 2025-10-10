@@ -25,6 +25,7 @@ internal sealed class AgentPublisher : BackgroundService
         AsyncIO.ForceDotNet.Force();
         using var publisher = new PublisherSocket();
         publisher.Options.Linger = TimeSpan.Zero;
+        publisher.Options.SendHighWatermark = _options.SendHighWatermark;
         publisher.Connect(_options.PublishEndpoint);
 
         _logger.LogInformation(
@@ -69,20 +70,22 @@ internal sealed class AgentPublisher : BackgroundService
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var message = new NetMQMessage(2);
-            message.Append(_options.Topic);
-            message.Append(payload);
-
             try
             {
-                publisher.SendMultipartMessage(message);
+                if (TrySendMeasurement(publisher, payload))
+                {
+                    _logger.LogDebug(
+                        "Published measurement {Key} at {TimestampUtc:o} with value {Value:F3}.",
+                        measurement.Key,
+                        measurement.TimestampUtc,
+                        measurement.Value);
+                    return;
+                }
 
-                _logger.LogDebug(
-                    "Published measurement {Key} at {TimestampUtc:o} with value {Value:F3}.",
+                _logger.LogWarning(
+                    "Publishing measurement {Key} timed out after waiting {Timeout}.",
                     measurement.Key,
-                    measurement.TimestampUtc,
-                    measurement.Value);
-                return;
+                    _options.SendTimeout);
             }
             catch (NetMQException ex) when (attempt < _options.SendRetryCount)
             {
@@ -92,15 +95,33 @@ internal sealed class AgentPublisher : BackgroundService
                     attempt,
                     measurement.Key,
                     _options.SendRetryBackoffMilliseconds);
-
-                attempt++;
-                await Task.Delay(_options.RetryBackoff, cancellationToken).ConfigureAwait(false);
             }
             catch (NetMQException ex)
             {
                 _logger.LogError(ex, "Failed to publish measurement {Key} after {Attempt} attempt(s).", measurement.Key, attempt);
                 return;
             }
+
+            if (attempt >= _options.SendRetryCount)
+            {
+                _logger.LogWarning(
+                    "Dropping measurement {Key} after {Attempt} timed out publish attempts.",
+                    measurement.Key,
+                    attempt);
+                return;
+            }
+
+            attempt++;
+            await Task.Delay(_options.RetryBackoff, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private bool TrySendMeasurement(PublisherSocket publisher, string payload)
+    {
+        var message = new NetMQMessage(2);
+        message.Append(_options.Topic);
+        message.Append(payload);
+
+        return publisher.TrySendMultipartMessage(_options.SendTimeout, message);
     }
 }

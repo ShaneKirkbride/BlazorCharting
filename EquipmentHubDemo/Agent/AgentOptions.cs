@@ -7,6 +7,8 @@ public sealed class AgentOptions
 {
     private static readonly TimeSpan DefaultPublishInterval = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan DefaultRetryBackoff = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan DefaultSendTimeout = TimeSpan.FromMilliseconds(250);
+    private const int DefaultSendHighWatermark = 1000;
 
     public string PublishEndpoint { get; set; } = "tcp://127.0.0.1:5556";
 
@@ -18,11 +20,17 @@ public sealed class AgentOptions
 
     public int SendRetryBackoffMilliseconds { get; set; } = (int)DefaultRetryBackoff.TotalMilliseconds;
 
+    public int SendTimeoutMilliseconds { get; set; } = (int)DefaultSendTimeout.TotalMilliseconds;
+
+    public int SendHighWatermark { get; set; } = DefaultSendHighWatermark;
+
     public List<InstrumentOptions> Instruments { get; set; } = CreateDefaultInstruments();
 
     public TimeSpan PublishInterval => TimeSpan.FromMilliseconds(PublishIntervalMilliseconds);
 
     public TimeSpan RetryBackoff => TimeSpan.FromMilliseconds(SendRetryBackoffMilliseconds);
+
+    public TimeSpan SendTimeout => TimeSpan.FromMilliseconds(SendTimeoutMilliseconds);
 
     public void Normalize()
     {
@@ -47,6 +55,16 @@ public sealed class AgentOptions
         if (SendRetryBackoffMilliseconds < 0)
         {
             SendRetryBackoffMilliseconds = (int)DefaultRetryBackoff.TotalMilliseconds;
+        }
+
+        if (SendTimeoutMilliseconds <= 0)
+        {
+            SendTimeoutMilliseconds = (int)DefaultSendTimeout.TotalMilliseconds;
+        }
+
+        if (SendHighWatermark <= 0)
+        {
+            SendHighWatermark = DefaultSendHighWatermark;
         }
 
         Instruments = (Instruments ?? new List<InstrumentOptions>())
