@@ -55,6 +55,25 @@ public static class ProgramTests
     }
 
     [Fact]
+    public static void AgentOptions_Normalize_EnforcesPublisherGuards()
+    {
+        var defaults = new AgentOptions();
+        defaults.Normalize();
+
+        var options = new AgentOptions
+        {
+            SendTimeoutMilliseconds = 0,
+            SendHighWatermark = -5
+        };
+
+        options.Normalize();
+
+        Assert.Equal(defaults.SendTimeoutMilliseconds, options.SendTimeoutMilliseconds);
+        Assert.Equal(defaults.SendHighWatermark, options.SendHighWatermark);
+        Assert.Equal(defaults.SendTimeout, options.SendTimeout);
+    }
+
+    [Fact]
     public static void MeasurementGenerator_RespectsConfiguredInstrumentsAndMetrics()
     {
         var options = Options.Create(new AgentOptions
