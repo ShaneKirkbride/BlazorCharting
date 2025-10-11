@@ -39,6 +39,34 @@ public sealed class MonitoringStatusProviderTests
 
         Assert.DoesNotContain(statuses, s => s.Metric.Contains("Power", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public void GetStatuses_WhenNoMetrics_ReturnsEmpty()
+    {
+        var now = new DateTimeOffset(2024, 11, 05, 12, 0, 0, TimeSpan.Zero);
+        var cache = new TestLiveCache();
+        var provider = new MonitoringStatusProvider(cache, new TestTimeProvider(now));
+
+        var statuses = provider.GetStatuses();
+
+        Assert.Empty(statuses);
+    }
+
+    [Fact]
+    public void GetStatuses_FutureMeasurementsClampAgeToZero()
+    {
+        var now = new DateTimeOffset(2024, 11, 05, 12, 0, 0, TimeSpan.Zero);
+        var cache = new TestLiveCache("IN-3:Temperature");
+        cache.Push("IN-3:Temperature", now.UtcDateTime.AddMinutes(1), 21.5);
+
+        var provider = new MonitoringStatusProvider(cache, new TestTimeProvider(now));
+
+        var statuses = provider.GetStatuses();
+
+        var temperature = Assert.Single(statuses);
+        Assert.Equal(TimeSpan.Zero, temperature.Age);
+        Assert.Equal(MonitoringHealth.Nominal, temperature.Health);
+    }
 }
 
 internal sealed class TestLiveCache : ILiveCache
