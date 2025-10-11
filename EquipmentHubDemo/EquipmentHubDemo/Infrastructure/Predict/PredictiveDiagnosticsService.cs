@@ -42,7 +42,9 @@ public sealed class PredictiveDiagnosticsService : IPredictiveDiagnosticsService
         ArgumentException.ThrowIfNullOrWhiteSpace(instrumentId);
         ArgumentException.ThrowIfNullOrWhiteSpace(metric);
 
-        var samples = await _repository.GetRecentAsync(instrumentId, metric, _options.LookbackWindow, cancellationToken).ConfigureAwait(false);
+        var samples = await _repository
+            .GetRecentAsync(instrumentId, metric, _options.LookbackWindow, cancellationToken)
+            .ConfigureAwait(false);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         if (samples.Count == 0)
@@ -51,7 +53,29 @@ public sealed class PredictiveDiagnosticsService : IPredictiveDiagnosticsService
             return new PredictiveInsight(instrumentId, metric, 0, now, 0, 0);
         }
 
-        var values = samples.Select(s => s.Value).ToArray();
+        var values = samples
+            .Select(sample => sample.Value)
+            .Where(double.IsFinite)
+            .ToArray();
+
+        if (values.Length == 0)
+        {
+            _logger.LogWarning(
+                "All diagnostic samples for {Instrument}/{Metric} were non-finite.",
+                instrumentId,
+                metric);
+            return new PredictiveInsight(instrumentId, metric, 0, now, 0, 0);
+        }
+
+        if (values.Length != samples.Count)
+        {
+            _logger.LogWarning(
+                "Excluded {InvalidCount} non-finite diagnostic samples for {Instrument}/{Metric}.",
+                samples.Count - values.Length,
+                instrumentId,
+                metric);
+        }
+
         var mean = values.Average();
         var variance = values.Length <= 1
             ? 0

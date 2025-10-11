@@ -39,6 +39,42 @@ public sealed class PredictiveMaintenanceServiceTests
     }
 
     [Fact]
+    public async Task ScheduleServiceAsync_ClampsLeadTimeToValidRange()
+    {
+        var diagnostics = new StubPredictiveDiagnosticsService();
+        diagnostics.SetInsight(new PredictiveInsight("IN-601", "Humidity", 1.5, DateTime.UtcNow, 20, 2));
+        var now = new DateTimeOffset(2024, 11, 05, 12, 0, 0, TimeSpan.Zero);
+        var service = new PredictiveMaintenanceService(diagnostics, new TestTimeProvider(now), NullLogger<PredictiveMaintenanceService>.Instance);
+
+        var plan = await service.ScheduleServiceAsync("IN-601", "Humidity", CancellationToken.None);
+
+        Assert.Equal(now.UtcDateTime.AddDays(1), plan.ScheduledFor);
+
+        diagnostics.SetInsight(new PredictiveInsight("IN-601", "Humidity", -5, DateTime.UtcNow, 20, 2));
+        plan = await service.ScheduleServiceAsync("IN-601", "Humidity", CancellationToken.None);
+
+        Assert.Equal(now.UtcDateTime.AddDays(30), plan.ScheduledFor);
+    }
+
+    [Fact]
+    public async Task ScheduleRepairAsync_ClampsUrgencyWindow()
+    {
+        var diagnostics = new StubPredictiveDiagnosticsService();
+        diagnostics.SetInsight(new PredictiveInsight("IN-602", "Temperature", 2, DateTime.UtcNow, 15, 1));
+        var now = new DateTimeOffset(2024, 11, 05, 12, 0, 0, TimeSpan.Zero);
+        var service = new PredictiveMaintenanceService(diagnostics, new TestTimeProvider(now), NullLogger<PredictiveMaintenanceService>.Instance);
+
+        var plan = await service.ScheduleRepairAsync("IN-602", "Temperature", CancellationToken.None);
+
+        Assert.Equal(now.UtcDateTime.AddDays(1), plan.ScheduledFor);
+
+        diagnostics.SetInsight(new PredictiveInsight("IN-602", "Temperature", -3, DateTime.UtcNow, 15, 1));
+        plan = await service.ScheduleRepairAsync("IN-602", "Temperature", CancellationToken.None);
+
+        Assert.Equal(now.UtcDateTime.AddDays(14), plan.ScheduledFor);
+    }
+
+    [Fact]
     public async Task GetSummaryAsync_ComputesPlansAndCachesInsight()
     {
         var diagnostics = new StubPredictiveDiagnosticsService();

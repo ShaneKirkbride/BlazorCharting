@@ -32,8 +32,8 @@ public sealed class PredictiveDiagnosticsServiceTests
         Assert.Equal("Temperature", insight.Metric);
         Assert.Equal(now.UtcDateTime, insight.TimestampUtc);
         Assert.Equal(12, insight.Mean, 3);
-        Assert.Equal(Math.Sqrt(8.0 / 3.0), insight.StandardDeviation, 3);
-        Assert.InRange(insight.FailureProbability, 0.1, 0.2);
+        Assert.Equal(Math.Sqrt(8.0 / 3.0), insight.StandardDeviation, 6);
+        Assert.Equal(0.13607142420260412, insight.FailureProbability, 12);
     }
 
     [Fact]
@@ -53,6 +53,57 @@ public sealed class PredictiveDiagnosticsServiceTests
         Assert.Equal(0, insight.Mean);
         Assert.Equal(0, insight.StandardDeviation);
         Assert.Equal(0, insight.FailureProbability);
+    }
+
+    [Fact]
+    public async Task GetInsightAsync_IgnoresNonFiniteSamples()
+    {
+        var repository = new TestDiagnosticRepository();
+        repository.Seed(
+            "IN-402",
+            "Temperature",
+            new DiagnosticSample("IN-402", "Temperature", double.NaN, new DateTime(2024, 11, 05, 8, 0, 0, DateTimeKind.Utc)),
+            new DiagnosticSample("IN-402", "Temperature", double.PositiveInfinity, new DateTime(2024, 11, 05, 8, 1, 0, DateTimeKind.Utc)),
+            new DiagnosticSample("IN-402", "Temperature", 5, new DateTime(2024, 11, 05, 8, 2, 0, DateTimeKind.Utc)));
+
+        var now = new DateTimeOffset(2024, 11, 05, 9, 0, 0, TimeSpan.Zero);
+        var options = Options.Create(new PredictiveDiagnosticsOptions { LookbackWindow = TimeSpan.FromHours(1) });
+        var service = new PredictiveDiagnosticsService(
+            repository,
+            options,
+            new TestTimeProvider(now),
+            NullLogger<PredictiveDiagnosticsService>.Instance);
+
+        var insight = await service.GetInsightAsync("IN-402", "Temperature", CancellationToken.None);
+
+        Assert.Equal(5, insight.Mean);
+        Assert.Equal(0, insight.StandardDeviation);
+        Assert.Equal(0, insight.FailureProbability);
+    }
+
+    [Fact]
+    public async Task GetInsightAsync_WhenMeanNearZero_ClampsFailureProbability()
+    {
+        var repository = new TestDiagnosticRepository();
+        repository.Seed(
+            "IN-403",
+            "Humidity",
+            new DiagnosticSample("IN-403", "Humidity", -0.1, new DateTime(2024, 11, 05, 8, 0, 0, DateTimeKind.Utc)),
+            new DiagnosticSample("IN-403", "Humidity", 0.1, new DateTime(2024, 11, 05, 8, 1, 0, DateTimeKind.Utc)));
+
+        var now = new DateTimeOffset(2024, 11, 05, 9, 0, 0, TimeSpan.Zero);
+        var options = Options.Create(new PredictiveDiagnosticsOptions { LookbackWindow = TimeSpan.FromHours(1) });
+        var service = new PredictiveDiagnosticsService(
+            repository,
+            options,
+            new TestTimeProvider(now),
+            NullLogger<PredictiveDiagnosticsService>.Instance);
+
+        var insight = await service.GetInsightAsync("IN-403", "Humidity", CancellationToken.None);
+
+        Assert.Equal(0, insight.Mean, 10);
+        Assert.Equal(0.1, insight.StandardDeviation, 6);
+        Assert.Equal(1, insight.FailureProbability);
     }
 }
 
