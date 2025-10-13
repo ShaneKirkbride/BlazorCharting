@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using EquipmentHubDemo.Domain.Monitoring;
@@ -13,7 +14,6 @@ internal sealed class MeasurementGenerator : IMeasurementGenerator
         new[] { "Temperature", "Humidity", "Heartbeat", "SelfCheck" },
         StringComparer.OrdinalIgnoreCase);
 
-    private readonly AgentOptions _options;
     private readonly InstrumentMonitorOptions _monitorOptions;
     private readonly IScpiCommandClient _scpiClient;
     private readonly TimeProvider _timeProvider;
@@ -21,6 +21,8 @@ internal sealed class MeasurementGenerator : IMeasurementGenerator
     private readonly ILogger<MeasurementGenerator> _logger;
     private readonly ConcurrentDictionary<string, MonitorSchedule> _schedules;
     private readonly ConcurrentDictionary<MeasureKey, SyntheticSeriesState> _syntheticSeries;
+    private readonly InstrumentOptions _instrument;
+    private readonly string _instrumentId;
 
     public MeasurementGenerator(
         IOptions<AgentOptions> options,
@@ -30,7 +32,9 @@ internal sealed class MeasurementGenerator : IMeasurementGenerator
         Random random,
         ILogger<MeasurementGenerator> logger)
     {
-        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        var agentOptions = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _instrument = agentOptions.Instrument ?? throw new InvalidOperationException("Agent instrument must be configured.");
+        _instrumentId = _instrument.InstrumentId;
 
         var monitorValue = monitorOptions?.Value ?? throw new ArgumentNullException(nameof(monitorOptions));
         monitorValue.Validate();
@@ -43,36 +47,34 @@ internal sealed class MeasurementGenerator : IMeasurementGenerator
 
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _schedules = new ConcurrentDictionary<string, MonitorSchedule>(StringComparer.OrdinalIgnoreCase);
-        foreach (var instrument in _monitorOptions.Instruments)
-        {
-            _schedules.TryAdd(instrument, MonitorSchedule.Create(now));
-        }
+        _schedules.TryAdd(_instrumentId, MonitorSchedule.Create(now));
 
         _syntheticSeries = new ConcurrentDictionary<MeasureKey, SyntheticSeriesState>();
+
+        if (!_monitorOptions.Instruments.Any(id => string.Equals(id, _instrumentId, StringComparison.OrdinalIgnoreCase)))
+        {
+            _logger.LogWarning(
+                "Monitoring configuration does not include instrument {InstrumentId}. Falling back to agent instrument only.",
+                _instrumentId);
+        }
     }
 
     public IEnumerable<Measurement> CreateMeasurements(DateTime timestampUtc)
     {
-        foreach (var instrumentId in _monitorOptions.Instruments)
+        foreach (var measurement in ExecuteMonitorTasks(_instrumentId, timestampUtc))
         {
-            foreach (var measurement in ExecuteMonitorTasks(instrumentId, timestampUtc))
-            {
-                yield return measurement;
-            }
+            yield return measurement;
         }
 
         var angle = timestampUtc.Ticks / 2e7d;
-        foreach (var instrument in _options.Instruments)
+        foreach (var metric in _instrument.Metrics)
         {
-            foreach (var metric in instrument.Metrics)
+            if (IsMonitorMetric(metric))
             {
-                if (IsMonitorMetric(metric))
-                {
-                    continue;
-                }
-
-                yield return CreateSyntheticMeasurement(instrument.InstrumentId, metric, timestampUtc, angle);
+                continue;
             }
+
+            yield return CreateSyntheticMeasurement(_instrumentId, metric, timestampUtc, angle);
         }
     }
 

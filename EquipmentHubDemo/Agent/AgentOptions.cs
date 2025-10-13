@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 
 namespace Agent;
 
@@ -24,7 +23,7 @@ public sealed class AgentOptions
 
     public int SendHighWatermark { get; set; } = DefaultSendHighWatermark;
 
-    public List<InstrumentOptions> Instruments { get; set; } = CreateDefaultInstruments();
+    public InstrumentOptions Instrument { get; set; } = CreateDefaultInstrument();
 
     public TimeSpan PublishInterval => TimeSpan.FromMilliseconds(PublishIntervalMilliseconds);
 
@@ -67,39 +66,23 @@ public sealed class AgentOptions
             SendHighWatermark = DefaultSendHighWatermark;
         }
 
-        Instruments = (Instruments ?? new List<InstrumentOptions>())
-            .Select(i => i?.Clone())
-            .Where(i => i is not null)
-            .Cast<InstrumentOptions>()
-            .ToList();
+        var instrument = Instrument?.Clone();
+        instrument ??= CreateDefaultInstrument();
+        instrument.Normalize();
 
-        foreach (var instrument in Instruments.ToList())
+        if (string.IsNullOrWhiteSpace(instrument.InstrumentId) || instrument.Metrics.Count == 0)
         {
+            instrument = CreateDefaultInstrument();
             instrument.Normalize();
-            if (string.IsNullOrWhiteSpace(instrument.InstrumentId) || instrument.Metrics.Count == 0)
-            {
-                Instruments.Remove(instrument);
-            }
         }
 
-        if (Instruments.Count == 0)
-        {
-            Instruments = CreateDefaultInstruments();
-        }
+        Instrument = instrument;
     }
 
-    private static List<InstrumentOptions> CreateDefaultInstruments() =>
+    private static InstrumentOptions CreateDefaultInstrument() =>
         new()
         {
-            new InstrumentOptions
-            {
-                InstrumentId = "UXG-01",
-                Metrics = new List<string> { "Temperature", "Humidity", "Power (240VAC)" }
-            },
-            new InstrumentOptions
-            {
-                InstrumentId = "UXG-02",
-                Metrics = new List<string> { "Temperature", "Humidity", "Power (240VAC)" }
-            }
+            InstrumentId = "UXG-01",
+            Metrics = new List<string> { "Temperature", "Humidity", "Power (240VAC)" }
         };
 }

@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Text.Json;
 using EquipmentHubDemo.Domain.Monitoring;
@@ -71,6 +70,7 @@ public static class ProgramTests
         Assert.Equal(defaults.SendTimeoutMilliseconds, options.SendTimeoutMilliseconds);
         Assert.Equal(defaults.SendHighWatermark, options.SendHighWatermark);
         Assert.Equal(defaults.SendTimeout, options.SendTimeout);
+        Assert.Equal(defaults.Instrument.InstrumentId, options.Instrument.InstrumentId);
     }
 
     [Fact]
@@ -78,18 +78,10 @@ public static class ProgramTests
     {
         var options = Options.Create(new AgentOptions
         {
-            Instruments = new List<InstrumentOptions>
+            Instrument = new InstrumentOptions
             {
-                new()
-                {
-                    InstrumentId = "A-01",
-                    Metrics = new List<string> { "Power (240VAC)" }
-                },
-                new()
-                {
-                    InstrumentId = "B-02",
-                    Metrics = new List<string> { "Humidity", "Custom" }
-                }
+                InstrumentId = "B-02",
+                Metrics = new List<string> { "Power (240VAC)", "Humidity", "Custom" }
             }
         });
         options.Value.Normalize();
@@ -110,14 +102,14 @@ public static class ProgramTests
 
         var results = generator.CreateMeasurements(timestamp).ToList();
 
-        Assert.Equal(10, results.Count);
-        Assert.Contains(results, m => m.Key.InstrumentId == "A-01" && m.Key.Metric == "Power (240VAC)"
-            && m.Value != default);
-        Assert.Contains(results, m => m.Key.InstrumentId == "B-02" && m.Key.Metric == "Humidity" && Math.Abs(m.Value - 40.0) < 0.001);
-        Assert.Contains(results, m => m.Key.InstrumentId == "B-02" && m.Key.Metric == "Custom");
-        Assert.True(results.Count(m => m.Key.Metric == "Heartbeat") == 2);
-        Assert.True(results.Count(m => m.Key.Metric == "SelfCheck") == 2);
-        Assert.True(results.Count(m => m.Key.Metric == "Temperature") == 2);
+        Assert.Equal(6, results.Count);
+        Assert.All(results, m => Assert.Equal("B-02", m.Key.InstrumentId));
+        Assert.Contains(results, m => m.Key.Metric == "Heartbeat" && Math.Abs(m.Value - 1d) < 1e-6);
+        Assert.Contains(results, m => m.Key.Metric == "SelfCheck" && Math.Abs(m.Value - 1d) < 1e-6);
+        Assert.Contains(results, m => m.Key.Metric == "Temperature" && Math.Abs(m.Value - 25.5) < 1e-6);
+        Assert.Contains(results, m => m.Key.Metric == "Humidity" && Math.Abs(m.Value - 40.0) < 1e-6);
+        Assert.Contains(results, m => m.Key.Metric == "Power (240VAC)" && m.Value != default);
+        Assert.Contains(results, m => m.Key.Metric == "Custom");
     }
 }
 

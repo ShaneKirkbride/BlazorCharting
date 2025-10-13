@@ -12,13 +12,10 @@ public sealed class MeasurementGeneratorTests
     {
         var agentOptions = Options.Create(new AgentOptions
         {
-            Instruments =
+            Instrument = new InstrumentOptions
             {
-                new InstrumentOptions
-                {
-                    InstrumentId = "IN-01",
-                    Metrics = { "Power (240VAC)" }
-                }
+                InstrumentId = "IN-01",
+                Metrics = { "Power (240VAC)" }
             }
         });
         agentOptions.Value.Normalize();
@@ -72,13 +69,10 @@ public sealed class MeasurementGeneratorTests
     {
         var agentOptions = Options.Create(new AgentOptions
         {
-            Instruments =
+            Instrument = new InstrumentOptions
             {
-                new InstrumentOptions
-                {
-                    InstrumentId = "IN-02",
-                    Metrics = { "Power (240VAC)" }
-                }
+                InstrumentId = "IN-02",
+                Metrics = { "Power (240VAC)" }
             }
         });
         agentOptions.Value.Normalize();

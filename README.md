@@ -76,7 +76,7 @@ If the chart stays empty, confirm that both processes are still running and that
 
 ## Configuration Reference
 
-- **Agent settings** (`EquipmentHubDemo/Agent/appsettings.json`): configure publish frequency, retry counts, instruments, and monitoring cadences. Intervals are parsed as standard `hh:mm:ss` strings.
+- **Agent settings** (`EquipmentHubDemo/Agent/appsettings.json`): configure publish frequency, retry counts, the single instrument published by this agent, and monitoring cadences. Intervals are parsed as standard `hh:mm:ss` strings. Launch additional agent processes with different instrument identifiers when you need more sources.
 - **Hub settings** (`EquipmentHubDemo/EquipmentHubDemo/appsettings.json`): tune live cache retention, TTL cleanup, predictive diagnostics lookback, and simulated SCPI noise. Add origins under `Cors:AllowedOrigins` to grant browser access from remote hosts.
 - **ZeroMQ topology** (`EquipmentHubDemo/EquipmentHubDemo/Messaging/Zmq.cs`): adjust bind/connect addresses if the agent runs on a different host.
 - **Predictive diagnostics** automatically recreate the LiteDB file if corruption is detected, so deleting `data/diagnostics.db` is a safe way to reset history.
