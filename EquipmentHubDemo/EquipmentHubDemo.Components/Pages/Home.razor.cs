@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -568,17 +569,164 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
         return $"{Math.Round(value.TotalDays)}d ago";
     }
 
-    private static string GetHealthCss(MonitoringHealth health) => health switch
+    private static readonly IReadOnlyList<StatusBadgeViewModel> LegendBadges = new[]
     {
-        MonitoringHealth.Nominal => "status-chip status-chip--nominal",
-        MonitoringHealth.Stale => "status-chip status-chip--stale",
-        _ => "status-chip status-chip--missing"
+        CreateBadge(StatusSeverity.Critical, "Immediate service required for unsafe conditions."),
+        CreateBadge(StatusSeverity.Warning, "Maintenance scheduled soon; monitor closely."),
+        CreateBadge(StatusSeverity.Nominal, "Systems operating within expected limits."),
     };
 
-    private static string DescribeHealth(MonitoringHealth health) => health switch
+    private static IReadOnlyList<StatusBadgeViewModel> GetLegendBadges() => LegendBadges;
+
+    private static StatusBadgeViewModel BuildMaintenanceBadge(PredictiveStatus status)
     {
-        MonitoringHealth.Nominal => "Nominal",
-        MonitoringHealth.Stale => "Stale",
-        _ => "No Data"
+        var severity = DetermineMaintenanceSeverity(status);
+        var (action, scheduledFor) = GetPrimaryPlan(status);
+
+        var probability = status.Insight.FailureProbability.ToString("P0", CultureInfo.InvariantCulture);
+        var scheduleText = DescribePlanSchedule(action, scheduledFor);
+
+        var description = severity switch
+        {
+            StatusSeverity.Critical => $"High failure risk at {probability}; {scheduleText}.",
+            StatusSeverity.Warning => $"Watch conditions ({probability}); {scheduleText}.",
+            _ => $"Stable trend ({probability}); {scheduleText}."
+        };
+
+        return CreateBadge(
+            severity,
+            description,
+            $"{status.InstrumentId} {status.Metric}: {description}");
+    }
+
+    private static StatusBadgeViewModel BuildMonitoringBadge(MonitoringStatus status)
+    {
+        var severity = status.Health switch
+        {
+            MonitoringHealth.Missing => StatusSeverity.Critical,
+            MonitoringHealth.Stale => StatusSeverity.Warning,
+            _ => StatusSeverity.Nominal
+        };
+
+        var lastReading = status.Age is null
+            ? "No readings received yet."
+            : $"Last reading {FormatAge(status.Age)}.";
+
+        var description = severity switch
+        {
+            StatusSeverity.Critical => $"Telemetry unavailable. {lastReading}",
+            StatusSeverity.Warning => $"Telemetry stale. {lastReading}",
+            _ => $"Telemetry current. {lastReading}"
+        };
+
+        return CreateBadge(
+            severity,
+            description,
+            $"{status.InstrumentId} {status.Metric}: {description}");
+    }
+
+    private static StatusSeverity DetermineMaintenanceSeverity(PredictiveStatus status)
+    {
+        var (action, scheduledFor) = GetPrimaryPlan(status);
+        var now = DateTime.UtcNow;
+        var untilAction = scheduledFor - now;
+
+        if (untilAction <= TimeSpan.Zero || status.Insight.FailureProbability >= 0.6)
+        {
+            return StatusSeverity.Critical;
+        }
+
+        if (status.Insight.FailureProbability >= 0.3 || untilAction <= TimeSpan.FromDays(1))
+        {
+            return StatusSeverity.Warning;
+        }
+
+        return StatusSeverity.Nominal;
+    }
+
+    private static (string Action, DateTime ScheduledUtc) GetPrimaryPlan(PredictiveStatus status)
+    {
+        if (status.RepairPlan.ScheduledFor <= status.ServicePlan.ScheduledFor)
+        {
+            return (status.RepairPlan.Action, status.RepairPlan.ScheduledFor);
+        }
+
+        return (status.ServicePlan.Action, status.ServicePlan.ScheduledFor);
+    }
+
+    private static string DescribePlanSchedule(string action, DateTime scheduledUtc)
+    {
+        var relative = DescribeRelativeTime(scheduledUtc);
+        var local = scheduledUtc.ToLocalTime().ToString("g", CultureInfo.CurrentCulture);
+        var normalizedAction = string.IsNullOrWhiteSpace(action) ? "maintenance" : action.ToLowerInvariant();
+
+        return $"{normalizedAction} {relative} ({local})";
+    }
+
+    private static string DescribeRelativeTime(DateTime momentUtc)
+    {
+        var delta = momentUtc - DateTime.UtcNow;
+        var magnitude = DescribeDuration(delta);
+
+        return delta >= TimeSpan.Zero ? $"in {magnitude}" : $"{magnitude} ago";
+    }
+
+    private static string DescribeDuration(TimeSpan duration)
+    {
+        var span = duration.Duration();
+
+        if (span.TotalDays >= 1)
+        {
+            var days = Math.Max(1, (int)Math.Round(span.TotalDays));
+            return $"{days} {(days == 1 ? "day" : "days")}";
+        }
+
+        if (span.TotalHours >= 1)
+        {
+            var hours = Math.Max(1, (int)Math.Round(span.TotalHours));
+            return $"{hours} {(hours == 1 ? "hour" : "hours")}";
+        }
+
+        if (span.TotalMinutes >= 1)
+        {
+            var minutes = Math.Max(1, (int)Math.Round(span.TotalMinutes));
+            return $"{minutes} {(minutes == 1 ? "minute" : "minutes")}";
+        }
+
+        var seconds = Math.Max(1, (int)Math.Round(span.TotalSeconds));
+        return $"{seconds} {(seconds == 1 ? "second" : "seconds")}";
+    }
+
+    private static StatusBadgeViewModel CreateBadge(StatusSeverity severity, string description, string? ariaDescription = null)
+    {
+        var palette = GetPalette(severity);
+        var ariaText = string.IsNullOrWhiteSpace(ariaDescription)
+            ? $"{palette.Label}. {description}"
+            : ariaDescription!;
+
+        return new StatusBadgeViewModel(
+            $"status-badge {palette.CssModifier}",
+            palette.Label,
+            description,
+            palette.Icon,
+            ariaText);
+    }
+
+    private static StatusBadgePalette GetPalette(StatusSeverity severity) => severity switch
+    {
+        StatusSeverity.Critical => new StatusBadgePalette("status-badge--critical", "Critical", "⛔"),
+        StatusSeverity.Warning => new StatusBadgePalette("status-badge--warning", "Warning", "△"),
+        _ => new StatusBadgePalette("status-badge--nominal", "Nominal", "✓")
     };
+
+    private sealed record StatusBadgeViewModel(string CssClass, string Label, string Description, string Icon, string AriaLabel);
+
+    private sealed record StatusBadgePalette(string CssModifier, string Label, string Icon);
+
+    private enum StatusSeverity
+    {
+        Nominal,
+        Warning,
+        Critical
+    }
 }
