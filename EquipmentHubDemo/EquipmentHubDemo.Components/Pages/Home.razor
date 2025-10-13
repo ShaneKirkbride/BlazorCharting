@@ -31,6 +31,19 @@
         var predictiveStatuses = GetPredictiveStatuses();
         var monitoringStatuses = GetMonitoringStatuses();
 
+        <div class="status-legend" role="list" aria-label="Status legend">
+            @foreach (var badge in GetLegendBadges())
+            {
+                <div class="status-legend__item" role="listitem">
+                    <span class="@badge.CssClass" aria-label="@badge.AriaLabel">
+                        <span aria-hidden="true" class="status-badge__icon">@badge.Icon</span>
+                        <span class="status-badge__text">@badge.Label</span>
+                    </span>
+                    <span class="status-legend__description">@badge.Description</span>
+                </div>
+            }
+        </div>
+
         <div class="status-panels">
             <article class="status-panel" aria-labelledby="predictive-panel-title">
                 <header class="status-panel__header">
@@ -50,8 +63,15 @@
                             <li class="predictive-list__item" role="listitem">
                                 <div class="predictive-card">
                                     <header class="predictive-card__header">
+                                        @{ var severity = BuildMaintenanceBadge(status); }
                                         <h6 class="predictive-card__title">@status.InstrumentId<span class="predictive-card__metric">@status.Metric</span></h6>
-                                        <span class="predictive-card__probability">@status.Insight.FailureProbability.ToString("P1") failure risk</span>
+                                        <div class="predictive-card__severity" role="group" aria-label="Maintenance status">
+                                            <span class="@severity.CssClass" aria-label="@severity.AriaLabel">
+                                                <span aria-hidden="true" class="status-badge__icon">@severity.Icon</span>
+                                                <span class="status-badge__text">@severity.Label</span>
+                                            </span>
+                                            <span class="predictive-card__severity-description">@severity.Description</span>
+                                        </div>
                                     </header>
                                     <dl class="predictive-card__details">
                                         <div class="predictive-card__detail">
@@ -102,8 +122,15 @@
                             <li class="monitoring-list__item" role="listitem">
                                 <div class="monitoring-card">
                                     <header class="monitoring-card__header">
+                                        @{ var telemetry = BuildMonitoringBadge(status); }
                                         <h6 class="monitoring-card__title">@status.InstrumentId<span class="monitoring-card__metric">@status.Metric</span></h6>
-                                        <span class="@GetHealthCss(status.Health)">@DescribeHealth(status.Health)</span>
+                                        <div class="monitoring-card__status" role="group" aria-label="Telemetry status">
+                                            <span class="@telemetry.CssClass" aria-label="@telemetry.AriaLabel">
+                                                <span aria-hidden="true" class="status-badge__icon">@telemetry.Icon</span>
+                                                <span class="status-badge__text">@telemetry.Label</span>
+                                            </span>
+                                            <span class="monitoring-card__status-description">@telemetry.Description</span>
+                                        </div>
                                     </header>
                                     <dl class="monitoring-card__details">
                                         <div class="monitoring-card__detail">
