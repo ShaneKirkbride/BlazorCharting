@@ -29,8 +29,8 @@ internal sealed class AgentPublisher : BackgroundService
         publisher.Connect(_options.PublishEndpoint);
 
         _logger.LogInformation(
-            "Publishing {InstrumentCount} instrument(s) to {Endpoint} on topic {Topic}.",
-            _options.Instruments.Count,
+            "Publishing instrument {InstrumentId} to {Endpoint} on topic {Topic}.",
+            _options.Instrument.InstrumentId,
             _options.PublishEndpoint,
             _options.Topic);
 
