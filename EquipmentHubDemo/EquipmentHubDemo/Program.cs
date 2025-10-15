@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using EquipmentHubDemo.Components;
 using EquipmentHubDemo.Client.Services;
 using EquipmentHubDemo.Domain;
@@ -152,6 +153,23 @@ var app = builder.Build();
 app.UseStaticFiles();
 app.MapStaticAssets();
 
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        if (context.Request.Path.Equals("/_framework/blazor.boot.json", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Response.Headers[HeaderNames.CacheControl] = "no-cache, no-store, must-revalidate";
+            context.Response.Headers[HeaderNames.Pragma] = "no-cache";
+            context.Response.Headers[HeaderNames.Expires] = "0";
+        }
+
+        return Task.CompletedTask;
+    });
+
+    await next();
+});
+
 // Antiforgery middleware must be in the pipeline
 app.UseAntiforgery();
 
@@ -201,3 +219,7 @@ app.MapRazorComponents<App>()
 // app.MapFallbackToFile("apphost.html");
 
 app.Run();
+
+public partial class Program
+{
+}
