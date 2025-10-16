@@ -173,12 +173,32 @@
         <div class="chart-grid" role="list">
             @foreach (var stream in activeStreams)
             {
+                var summary = BuildStreamSummary(stream);
                 <div class="chart-grid__cell" role="listitem">
-                    <div class="chart-grid__card">
-                        <h6 class="chart-grid__title text-muted">@stream.Key</h6>
+                    <article class="chart-grid__card" aria-labelledby="@summary.HeaderId">
+                        <header class="chart-card__header">
+                            <div class="chart-card__identity">
+                                <h6 id="@summary.HeaderId" class="chart-card__instrument">@summary.InstrumentLabel</h6>
+                                <span class="chart-card__metric">@summary.MetricLabel</span>
+                            </div>
+                            <dl class="chart-card__stats" aria-label="Stream summary">
+                                <div class="chart-card__stat">
+                                    <dt>Samples</dt>
+                                    <dd>@summary.SamplesText</dd>
+                                </div>
+                                <div class="chart-card__stat">
+                                    <dt>Last sample</dt>
+                                    <dd>@summary.LastObservedText</dd>
+                                </div>
+                                <div class="chart-card__stat">
+                                    <dt>Latest value</dt>
+                                    <dd>@summary.LatestValueText</dd>
+                                </div>
+                            </dl>
+                        </header>
                         <ChartIsland Points="stream.Points"
-                                     Title="stream.Key" />
-                    </div>
+                                     Title="summary.Title" />
+                    </article>
                 </div>
             }
 
