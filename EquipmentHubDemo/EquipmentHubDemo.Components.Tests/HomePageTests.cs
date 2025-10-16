@@ -47,8 +47,11 @@ public sealed class HomePageTests : TestContext
             var chartIsland = cut.FindComponent<ChartIsland>();
             Assert.NotNull(chartIsland);
 
-            var statusText = chartIsland.Find("p").TextContent.Trim();
-            Assert.Contains("island points", statusText);
+            var instrumentLabel = cut.Find("h6.chart-card__instrument").TextContent.Trim();
+            Assert.Equal("Line A", instrumentLabel);
+
+            var samplesText = cut.Find(".chart-card__stat dd").TextContent.Trim();
+            Assert.Equal("No samples", samplesText);
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -119,7 +122,7 @@ public sealed class HomePageTests : TestContext
             var chartIslands = cut.FindComponents<ChartIsland>();
             Assert.Equal(9, chartIslands.Count);
 
-            var titles = cut.FindAll("h6.chart-grid__title").Select(e => e.TextContent.Trim()).ToList();
+            var titles = cut.FindAll("h6.chart-card__instrument").Select(e => e.TextContent.Trim()).ToList();
             Assert.Contains("Line A", titles);
             Assert.Contains("Line B", titles);
             Assert.Contains("Line C", titles);
@@ -163,13 +166,18 @@ public sealed class HomePageTests : TestContext
         // Assert
         cut.WaitForAssertion(() =>
         {
-            var titles = cut.FindAll("h6.chart-grid__title")
+            var instruments = cut.FindAll("h6.chart-card__instrument")
+                .Select(e => e.TextContent.Trim())
+                .ToList();
+            var metrics = cut.FindAll(".chart-card__metric")
                 .Select(e => e.TextContent.Trim())
                 .ToList();
 
-            Assert.Contains("IN-1:Power (240VAC)", titles);
-            Assert.Contains("IN-1:Temperature", titles);
-            Assert.Equal(9, titles.Count);
+            Assert.Contains("IN-1", instruments);
+            Assert.Contains("Power (240VAC)", metrics);
+            Assert.Contains("Temperature", metrics);
+            Assert.Equal(9, instruments.Count);
+            Assert.Equal(9, metrics.Count);
         }, timeout: TimeSpan.FromSeconds(2));
     }
 

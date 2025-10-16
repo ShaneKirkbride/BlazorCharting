@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using EquipmentHubDemo.Components.Streaming;
@@ -374,6 +375,105 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
 
     private IEnumerable<ChartStream> GetActiveStreams()
         => _streamManager.GetActiveStreams(_selectedKeys);
+
+    private ChartCardSummary BuildStreamSummary(ChartStream stream)
+    {
+        if (stream is null)
+        {
+            throw new ArgumentNullException(nameof(stream));
+        }
+
+        var key = stream.Key;
+
+        string instrumentLabel;
+        string metricLabel;
+
+        if (MeasureKey.TryParse(key, out var parsed))
+        {
+            instrumentLabel = string.IsNullOrWhiteSpace(parsed.InstrumentId)
+                ? "Unassigned instrument"
+                : parsed.InstrumentId;
+            metricLabel = string.IsNullOrWhiteSpace(parsed.Metric)
+                ? "Telemetry stream"
+                : parsed.Metric;
+        }
+        else
+        {
+            instrumentLabel = string.IsNullOrWhiteSpace(key)
+                ? "Live telemetry stream"
+                : key;
+            metricLabel = "Live telemetry stream";
+        }
+
+        var points = stream.Points;
+        var pointCount = points.Count;
+
+        var samplesText = pointCount == 0
+            ? "No samples"
+            : pointCount.ToString("N0", CultureInfo.CurrentCulture);
+
+        string lastObservedText;
+        string latestValueText;
+
+        if (pointCount == 0)
+        {
+            lastObservedText = "Awaiting samples";
+            latestValueText = "—";
+        }
+        else
+        {
+            var lastPoint = points[^1];
+            lastObservedText = lastPoint.X.ToLocalTime().ToString("g", CultureInfo.CurrentCulture);
+            latestValueText = lastPoint.Y.ToString("F2", CultureInfo.CurrentCulture);
+        }
+
+        return new ChartCardSummary(
+            Title: key,
+            InstrumentLabel: instrumentLabel,
+            MetricLabel: metricLabel,
+            SamplesText: samplesText,
+            LastObservedText: lastObservedText,
+            LatestValueText: latestValueText,
+            HeaderId: BuildHeaderId(key));
+    }
+
+    private static string BuildHeaderId(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return "chart-card";
+        }
+
+        var builder = new StringBuilder(key.Length + 10);
+        builder.Append("chart-");
+
+        foreach (var c in key)
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                builder.Append(char.ToLowerInvariant(c));
+            }
+            else if (c is '-' or '_')
+            {
+                builder.Append(c);
+            }
+            else
+            {
+                builder.Append('-');
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private sealed record ChartCardSummary(
+        string Title,
+        string InstrumentLabel,
+        string MetricLabel,
+        string SamplesText,
+        string LastObservedText,
+        string LatestValueText,
+        string HeaderId);
 
     private bool UpdateSelectionFromAvailableKeys()
     {

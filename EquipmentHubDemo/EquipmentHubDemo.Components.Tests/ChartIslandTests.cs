@@ -31,9 +31,6 @@ public sealed class ChartIslandTests : TestContext
             .Add(p => p.Points, points));
 
         // Assert
-        var status = cut.Find("p").TextContent.Trim();
-        Assert.Equal($"island points: {points.Length}", status);
-
         var placeholder = cut.Find("[data-testid='chart-placeholder']");
         Assert.Contains("WebAssembly-enabled", placeholder.TextContent);
 

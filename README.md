@@ -11,7 +11,7 @@ This repository hosts the Equipment Hub demo: a Blazor-based operations console 
 
 ## Prerequisites
 
-1. Install the [.NET SDK 9.0](https://dotnet.microsoft.com/download) (the solution pins runtime `9.0.9`).
+1. Install the [.NET SDK 9.0](https://dotnet.microsoft.com/download) (the solution pins runtime `9.0.10`).
 2. Optional (recommended for Blazor hybrid builds): `dotnet workload install wasm-tools`.
 3. No native ZeroMQ dependency is required—[NetMQ](https://github.com/NetMQ/NetMQ) ships a pure-managed broker used by both the agent and hub.
 

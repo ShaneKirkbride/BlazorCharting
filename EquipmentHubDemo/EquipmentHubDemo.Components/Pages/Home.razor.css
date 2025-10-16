@@ -46,18 +46,65 @@
     width: 100%;
 }
 
+.chart-card__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1.25rem;
+}
+
+.chart-card__identity {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.chart-card__instrument {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: #111827;
+}
+
+.chart-card__metric {
+    font-size: 0.9rem;
+    color: rgba(55, 65, 81, 0.85);
+}
+
+.chart-card__stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    margin: 0;
+}
+
+.chart-card__stat {
+    min-width: 6.5rem;
+}
+
+.chart-card__stat dt {
+    margin: 0 0 0.2rem 0;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(75, 85, 99, 0.85);
+}
+
+.chart-card__stat dd {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #111827;
+}
+
 .chart-grid__card--placeholder {
     align-items: center;
     justify-content: center;
     min-height: 12rem;
     background-image: linear-gradient(135deg, rgba(226, 232, 240, 0.35), rgba(203, 213, 225, 0.35));
-}
-
-.chart-grid__title {
-    font-size: 0.95rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
 }
 
 .chart-grid__placeholder {
