@@ -54,6 +54,9 @@ public sealed class RouterConfigurationTests : TestContext
 
     private sealed class NoopLiveMeasurementClient : ILiveMeasurementClient
     {
+        public Task<MeasurementCatalog> GetCatalogAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(MeasurementCatalog.Empty);
+
         public Task<IReadOnlyList<string>> GetAvailableKeysAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
 

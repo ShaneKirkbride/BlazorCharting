@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using EquipmentHubDemo.Components.Streaming;
 using EquipmentHubDemo.Domain;
+using EquipmentHubDemo.Domain.Live;
 using EquipmentHubDemo.Domain.Monitoring;
 using EquipmentHubDemo.Domain.Predict;
 using EquipmentHubDemo.Domain.Status;
@@ -21,19 +22,19 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
     private int GridCols => DefaultGridCols;
     private int MaxChartsDisplayed => GridCols * GridCols;
 
-
-    private static readonly string[] PreferredMetrics =
-    {
-        "Power (240VAC)",
-        "Temperature"
-    };
-
     private readonly ChartStreamManager _streamManager = new();
     private readonly List<string> _availableKeys = new();
+    private readonly List<string> _pinnedKeys = new();
+
+    private MeasurementCatalog _catalog = MeasurementCatalog.Empty;
+    private string _instrumentSearch = string.Empty;
+    private string? _activeInstrumentId;
 
     private IReadOnlyList<string> _selectedKeys = Array.Empty<string>();
     private IReadOnlyList<PredictiveStatus> _predictiveStatuses = Array.Empty<PredictiveStatus>();
     private IReadOnlyList<MonitoringStatus> _monitoringStatuses = Array.Empty<MonitoringStatus>();
+    private string? _selectionFeedback;
+    private bool _selectionFeedbackIsWarning;
 
     private CancellationTokenSource? _cts;
     private Task? _pollingTask;
@@ -53,6 +54,17 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
 
     private bool SupportsLiveCharts => ForceEnableLiveCharts || OperatingSystem.IsBrowser();
 
+    private string InstrumentSearch
+    {
+        get => _instrumentSearch;
+        set
+        {
+            _instrumentSearch = value ?? string.Empty;
+            EnsureActiveInstrument();
+            ClearSelectionFeedback();
+        }
+    }
+
     protected override async Task OnInitializedAsync()
     {
         EnsureStatusRefreshLoop();
@@ -65,7 +77,7 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
 
         try
         {
-            await TryLoadKeysAsync(initialLoad: true);
+            await TryLoadCatalogAsync(initialLoad: true);
         }
         catch (Exception ex)
         {
@@ -183,15 +195,12 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
         await StopStatusRefreshLoopAsync();
     }
 
-    private async Task<bool> TryLoadKeysAsync(bool initialLoad)
+    private async Task<bool> TryLoadCatalogAsync(bool initialLoad)
     {
-        var latestKeys = await Measurements.GetAvailableKeysAsync();
-        var latest = latestKeys is null ? new List<string>() : new List<string>(latestKeys);
+        var latestCatalog = await Measurements.GetCatalogAsync();
+        var hasKeys = ApplyCatalog(latestCatalog, initialLoad);
 
-        _availableKeys.Clear();
-        _availableKeys.AddRange(latest);
-
-        if (_availableKeys.Count == 0)
+        if (!hasKeys)
         {
             await StopPollingAsync();
             error = "Waiting for live data…";
@@ -215,6 +224,219 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
         }
 
         return true;
+    }
+
+    private bool ApplyCatalog(MeasurementCatalog? catalog, bool initialLoad)
+    {
+        _catalog = NormalizeCatalog(catalog);
+        var keys = _catalog.GetAllKeys();
+
+        var hadKeysBefore = _availableKeys.Count > 0;
+
+        _availableKeys.Clear();
+        _availableKeys.AddRange(keys);
+
+        SyncPinnedKeys(keys);
+
+        if ((_pinnedKeys.Count == 0 && keys.Count > 0) && (initialLoad || !hadKeysBefore))
+        {
+            SeedPinnedKeysFromCatalog();
+        }
+        else if (_pinnedKeys.Count == 0 && keys.Count > 0)
+        {
+            foreach (var key in keys.Take(MaxChartsDisplayed))
+            {
+                ForcePinKey(key);
+            }
+        }
+
+        EnsureActiveInstrument();
+
+        return _availableKeys.Count > 0;
+    }
+
+    private static MeasurementCatalog NormalizeCatalog(MeasurementCatalog? catalog)
+    {
+        if (catalog is null)
+        {
+            return MeasurementCatalog.Empty;
+        }
+
+        var instruments = new List<InstrumentSlice>();
+
+        foreach (var instrument in catalog.Instruments ?? Array.Empty<InstrumentSlice>())
+        {
+            if (instrument is null)
+            {
+                continue;
+            }
+
+            var metrics = new List<MetricSlice>();
+            if (instrument.Metrics is not null)
+            {
+                foreach (var metric in instrument.Metrics)
+                {
+                    if (metric is null || string.IsNullOrWhiteSpace(metric.Key))
+                    {
+                        continue;
+                    }
+
+                    var isPreferred = metric.IsPreferred || LiveCatalogPreferences.IsPreferredMetric(metric.Metric);
+                    var displayName = string.IsNullOrWhiteSpace(metric.DisplayName)
+                        ? (string.IsNullOrWhiteSpace(metric.Metric) ? metric.Key : metric.Metric)
+                        : metric.DisplayName;
+
+                    metrics.Add(new MetricSlice
+                    {
+                        Key = metric.Key,
+                        DisplayName = displayName,
+                        Metric = metric.Metric ?? string.Empty,
+                        IsPreferred = isPreferred
+                    });
+                }
+            }
+
+            if (metrics.Count == 0)
+            {
+                continue;
+            }
+
+            var displayLabel = string.IsNullOrWhiteSpace(instrument.DisplayName)
+                ? instrument.Id ?? string.Empty
+                : instrument.DisplayName;
+
+            instruments.Add(new InstrumentSlice
+            {
+                Id = instrument.Id ?? string.Empty,
+                DisplayName = displayLabel,
+                Metrics = metrics
+                    .OrderByDescending(m => m.IsPreferred)
+                    .ThenBy(m => m.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .ToList()
+            });
+        }
+
+        var ordered = instruments
+            .OrderBy(i => i.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new MeasurementCatalog
+        {
+            Instruments = ordered
+        };
+    }
+
+    private void SyncPinnedKeys(IReadOnlyList<string> availableKeys)
+    {
+        if (_pinnedKeys.Count == 0)
+        {
+            return;
+        }
+
+        var known = new HashSet<string>(availableKeys, StringComparer.Ordinal);
+        for (var i = _pinnedKeys.Count - 1; i >= 0; i--)
+        {
+            if (!known.Contains(_pinnedKeys[i]))
+            {
+                _pinnedKeys.RemoveAt(i);
+            }
+        }
+    }
+
+    private void SeedPinnedKeysFromCatalog()
+    {
+        foreach (var metric in _catalog.Instruments.SelectMany(instrument => instrument.Metrics))
+        {
+            if (!metric.IsPreferred)
+            {
+                continue;
+            }
+
+            ForcePinKey(metric.Key);
+
+            if (_pinnedKeys.Count >= MaxChartsDisplayed)
+            {
+                return;
+            }
+        }
+
+        if (_pinnedKeys.Count > 0)
+        {
+            return;
+        }
+
+        foreach (var key in _availableKeys.Take(MaxChartsDisplayed))
+        {
+            ForcePinKey(key);
+        }
+    }
+
+    private void ForcePinKey(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        if (_pinnedKeys.Any(existing => string.Equals(existing, key, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        _pinnedKeys.Add(key);
+    }
+
+    private bool TryPinKey(string key, out string? failureMessage)
+    {
+        failureMessage = null;
+
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return false;
+        }
+
+        if (_pinnedKeys.Any(existing => string.Equals(existing, key, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        if (_pinnedKeys.Count >= MaxChartsDisplayed)
+        {
+            failureMessage = $"A maximum of {MaxChartsDisplayed} charts can be pinned. Unpin a metric to add another.";
+            return false;
+        }
+
+        _pinnedKeys.Add(key);
+        return true;
+    }
+
+    private bool RemovePinnedKey(string key)
+    {
+        for (var i = 0; i < _pinnedKeys.Count; i++)
+        {
+            if (string.Equals(_pinnedKeys[i], key, StringComparison.Ordinal))
+            {
+                _pinnedKeys.RemoveAt(i);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void ClearSelectionFeedback()
+    {
+        _selectionFeedback = null;
+        _selectionFeedbackIsWarning = false;
+    }
+
+    private void SetSelectionFeedback(string message, bool isWarning = false)
+    {
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            _selectionFeedback = message;
+            _selectionFeedbackIsWarning = isWarning;
+        }
     }
 
     private void EnsureKeyRefreshLoop()
@@ -254,11 +476,10 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
                 }
                 firstIteration = false;
 
-                List<string> latest;
+                MeasurementCatalog? refreshedCatalog;
                 try
                 {
-                    var refreshedKeys = await Measurements.GetAvailableKeysAsync(ct);
-                    latest = refreshedKeys is null ? new List<string>() : new List<string>(refreshedKeys);
+                    refreshedCatalog = await Measurements.GetCatalogAsync(ct);
                 }
                 catch (OperationCanceledException)
                 {
@@ -277,11 +498,9 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
                 await InvokeAsync(async () =>
                 {
                     var hadKeysBefore = _availableKeys.Count > 0;
+                    var hasKeys = ApplyCatalog(refreshedCatalog, initialLoad: false);
 
-                    _availableKeys.Clear();
-                    _availableKeys.AddRange(latest);
-
-                    if (_availableKeys.Count == 0)
+                    if (!hasKeys)
                     {
                         if (hadKeysBefore)
                         {
@@ -477,23 +696,23 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
 
     private bool UpdateSelectionFromAvailableKeys()
     {
+        var orderedKeys = GetOrderedKeys();
         var sanitizedSelection = new List<string>(MaxChartsDisplayed);
 
-        foreach (var key in _selectedKeys)
+        foreach (var key in _pinnedKeys)
         {
             if (sanitizedSelection.Count >= MaxChartsDisplayed)
             {
                 break;
             }
 
-            if (_availableKeys.Contains(key, StringComparer.Ordinal)
-                && !sanitizedSelection.Contains(key, StringComparer.Ordinal))
+            if (orderedKeys.Contains(key, StringComparer.Ordinal) && !sanitizedSelection.Contains(key, StringComparer.Ordinal))
             {
                 sanitizedSelection.Add(key);
             }
         }
 
-        foreach (var key in _availableKeys)
+        foreach (var key in orderedKeys)
         {
             if (sanitizedSelection.Count >= MaxChartsDisplayed)
             {
@@ -506,11 +725,6 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
             }
         }
 
-        foreach (var metric in PreferredMetrics)
-        {
-            EnsurePreferredKey(sanitizedSelection, metric);
-        }
-
         var selectionChanged = sanitizedSelection.Count != _selectedKeys.Count
             || !_selectedKeys.SequenceEqual(sanitizedSelection, StringComparer.Ordinal);
 
@@ -521,52 +735,248 @@ public sealed partial class Home : ComponentBase, IAsyncDisposable
         return selectionChanged;
     }
 
-    private void EnsurePreferredKey(List<string> selection, string metric)
+    private IReadOnlyList<string> GetOrderedKeys()
     {
-        if (selection.Any(key => KeyMatchesMetric(key, metric)))
+        if (_catalog.Instruments.Count == 0)
+        {
+            return _availableKeys;
+        }
+
+        return _catalog.Instruments
+            .SelectMany(instrument => instrument.Metrics)
+            .Select(metric => metric.Key)
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .ToList();
+    }
+
+    private List<InstrumentSlice> GetFilteredInstruments()
+    {
+        if (_catalog.Instruments.Count == 0)
+        {
+            return new List<InstrumentSlice>();
+        }
+
+        if (string.IsNullOrWhiteSpace(_instrumentSearch))
+        {
+            return _catalog.Instruments.ToList();
+        }
+
+        var term = _instrumentSearch.Trim();
+        return _catalog.Instruments
+            .Where(instrument => ContainsIgnoreCase(instrument.DisplayName, term) || ContainsIgnoreCase(instrument.Id, term))
+            .ToList();
+    }
+
+    private static bool ContainsIgnoreCase(string source, string value)
+        => source?.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+
+    private InstrumentSlice? GetActiveInstrument()
+    {
+        if (_catalog.Instruments.Count == 0 || string.IsNullOrWhiteSpace(_activeInstrumentId))
+        {
+            return null;
+        }
+
+        return _catalog.Instruments
+            .FirstOrDefault(instrument => string.Equals(instrument.Id, _activeInstrumentId, StringComparison.Ordinal));
+    }
+
+    private void SelectInstrument(string instrumentId)
+    {
+        if (string.Equals(_activeInstrumentId, instrumentId, StringComparison.Ordinal))
         {
             return;
         }
 
-        var candidate = _availableKeys.FirstOrDefault(key => KeyMatchesMetric(key, metric));
-        if (candidate is null)
+        _activeInstrumentId = instrumentId;
+        ClearSelectionFeedback();
+    }
+
+    private void EnsureActiveInstrument()
+    {
+        var filtered = GetFilteredInstruments();
+        if (filtered.Count == 0)
         {
+            _activeInstrumentId = null;
             return;
         }
 
-        if (selection.Count < MaxChartsDisplayed)
+        if (_activeInstrumentId is null || filtered.All(instrument => !string.Equals(instrument.Id, _activeInstrumentId, StringComparison.Ordinal)))
         {
-            selection.Add(candidate);
-            return;
-        }
-
-        for (var i = selection.Count - 1; i >= 0; i--)
-        {
-            var existing = selection[i];
-            if (!IsPreferredKey(existing))
-            {
-                selection[i] = candidate;
-                return;
-            }
+            _activeInstrumentId = filtered[0].Id;
         }
     }
 
-    private static bool IsPreferredKey(string key)
-        => PreferredMetrics.Any(metric => KeyMatchesMetric(key, metric));
+    private bool IsMetricPinned(string key)
+        => !string.IsNullOrWhiteSpace(key) && _pinnedKeys.Any(existing => string.Equals(existing, key, StringComparison.Ordinal));
 
-    private static bool KeyMatchesMetric(string key, string metric)
+    private string BuildMetricCheckboxId(string key)
+        => BuildHeaderId(key) + "-slicer";
+
+    private async Task ToggleMetricAsync(string key, bool isSelected)
     {
-        if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(metric))
+        if (string.IsNullOrWhiteSpace(key))
         {
-            return false;
+            return;
         }
 
-        if (MeasureKey.TryParse(key, out var parsedKey))
+        if (isSelected)
         {
-            return string.Equals(parsedKey.Metric, metric, StringComparison.OrdinalIgnoreCase);
+            if (!TryPinKey(key, out var failureMessage))
+            {
+                if (!string.IsNullOrWhiteSpace(failureMessage))
+                {
+                    SetSelectionFeedback(failureMessage, isWarning: true);
+                    StateHasChanged();
+                }
+
+                return;
+            }
+
+            ClearSelectionFeedback();
+        }
+        else
+        {
+            if (RemovePinnedKey(key))
+            {
+                ClearSelectionFeedback();
+            }
         }
 
-        return key.Contains(metric, StringComparison.OrdinalIgnoreCase);
+        var selectionChanged = UpdateSelectionFromAvailableKeys();
+
+        if (selectionChanged)
+        {
+            await StartPollingAsync();
+        }
+        else
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task PinRecommendedMetricsAsync()
+    {
+        var instrument = GetActiveInstrument();
+        if (instrument is null)
+        {
+            return;
+        }
+
+        var hasPreferred = false;
+        var addedAny = false;
+
+        foreach (var metric in instrument.Metrics)
+        {
+            if (!metric.IsPreferred)
+            {
+                continue;
+            }
+
+            hasPreferred = true;
+
+            if (TryPinKey(metric.Key, out var failureMessage))
+            {
+                addedAny = true;
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(failureMessage))
+            {
+                SetSelectionFeedback(failureMessage, isWarning: true);
+                StateHasChanged();
+                return;
+            }
+        }
+
+        if (!hasPreferred)
+        {
+            SetSelectionFeedback("This instrument does not expose recommended metrics yet.");
+            StateHasChanged();
+            return;
+        }
+
+        if (!addedAny)
+        {
+            SetSelectionFeedback("All recommended metrics are already pinned for this instrument.");
+            StateHasChanged();
+            return;
+        }
+
+        ClearSelectionFeedback();
+
+        var selectionChanged = UpdateSelectionFromAvailableKeys();
+        if (selectionChanged)
+        {
+            await StartPollingAsync();
+        }
+        else
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task ClearInstrumentPinsAsync()
+    {
+        var instrument = GetActiveInstrument();
+        if (instrument is null)
+        {
+            return;
+        }
+
+        var removedAny = false;
+
+        foreach (var metric in instrument.Metrics)
+        {
+            removedAny |= RemovePinnedKey(metric.Key);
+        }
+
+        if (!removedAny)
+        {
+            SetSelectionFeedback("No pinned metrics for this instrument yet.");
+            StateHasChanged();
+            return;
+        }
+
+        ClearSelectionFeedback();
+
+        var selectionChanged = UpdateSelectionFromAvailableKeys();
+        if (selectionChanged)
+        {
+            await StartPollingAsync();
+        }
+        else
+        {
+            StateHasChanged();
+        }
+    }
+
+    private string GetActiveSampleCountText()
+    {
+        var total = _streamManager.CountActivePoints(_selectedKeys);
+        return total == 0 ? "Awaiting data" : total.ToString("N0", CultureInfo.CurrentCulture);
+    }
+
+    private string BuildChipLabel(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return "Telemetry";
+        }
+
+        if (MeasureKey.TryParse(key, out var parsed))
+        {
+            if (string.IsNullOrWhiteSpace(parsed.Metric))
+            {
+                return parsed.InstrumentId;
+            }
+
+            return string.IsNullOrWhiteSpace(parsed.InstrumentId)
+                ? parsed.Metric
+                : $"{parsed.InstrumentId} · {parsed.Metric}";
+        }
+
+        return key;
     }
 
     private async Task RefreshStatusLoopAsync(CancellationToken ct)

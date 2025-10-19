@@ -188,6 +188,7 @@ public sealed class HomePageTests : TestContext
     {
         private readonly Queue<IReadOnlyList<string>> _keys;
         private readonly Queue<IReadOnlyList<PointDto>> _measurements;
+        private IReadOnlyList<string> _lastCatalogKeys = Array.Empty<string>();
 
         public StubLiveMeasurementClient(
             IEnumerable<IReadOnlyList<string>> keysSequence,
@@ -199,16 +200,25 @@ public sealed class HomePageTests : TestContext
 
         public List<(string Key, long SinceTicks)> MeasurementRequests { get; } = new();
 
+        public Task<MeasurementCatalog> GetCatalogAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = DequeueKeysIfAvailable();
+            _lastCatalogKeys = snapshot;
+            return Task.FromResult(BuildCatalog(snapshot));
+        }
+
         public Task<IReadOnlyList<string>> GetAvailableKeysAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (_keys.Count == 0)
+
+            if (_lastCatalogKeys.Count == 0)
             {
-                return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+                var snapshot = DequeueKeysIfAvailable();
+                _lastCatalogKeys = snapshot;
             }
 
-            var value = _keys.Count > 1 ? _keys.Dequeue() : _keys.Peek();
-            return Task.FromResult(value);
+            return Task.FromResult(_lastCatalogKeys);
         }
 
         public Task<IReadOnlyList<PointDto>> GetMeasurementsAsync(string key, long sinceTicks, CancellationToken cancellationToken = default)
@@ -223,6 +233,70 @@ public sealed class HomePageTests : TestContext
 
             var value = _measurements.Count > 1 ? _measurements.Dequeue() : _measurements.Peek();
             return Task.FromResult(value);
+        }
+
+        private IReadOnlyList<string> DequeueKeysIfAvailable()
+        {
+            if (_keys.Count == 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            var source = _keys.Count > 1 ? _keys.Dequeue() : _keys.Peek();
+            return (IReadOnlyList<string>)source.ToArray();
+        }
+
+        private static MeasurementCatalog BuildCatalog(IReadOnlyList<string> keys)
+        {
+            if (keys.Count == 0)
+            {
+                return MeasurementCatalog.Empty;
+            }
+
+            var instruments = new Dictionary<string, List<MetricSlice>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var key in keys)
+            {
+                var instrumentId = "Ungrouped";
+                var metricName = key;
+                if (MeasureKey.TryParse(key, out var parsed))
+                {
+                    instrumentId = string.IsNullOrWhiteSpace(parsed.InstrumentId) ? "Ungrouped" : parsed.InstrumentId;
+                    metricName = string.IsNullOrWhiteSpace(parsed.Metric) ? key : parsed.Metric;
+                }
+
+                if (!instruments.TryGetValue(instrumentId, out var metrics))
+                {
+                    metrics = new List<MetricSlice>();
+                    instruments[instrumentId] = metrics;
+                }
+
+                metrics.Add(new MetricSlice
+                {
+                    Key = key,
+                    DisplayName = metricName,
+                    Metric = metricName,
+                    IsPreferred = LiveCatalogPreferences.IsPreferredMetric(metricName)
+                });
+            }
+
+            var instrumentSlices = instruments
+                .Select(pair => new InstrumentSlice
+                {
+                    Id = pair.Key,
+                    DisplayName = pair.Key,
+                    Metrics = pair.Value
+                        .OrderByDescending(metric => metric.IsPreferred)
+                        .ThenBy(metric => metric.DisplayName, StringComparer.OrdinalIgnoreCase)
+                        .ToList()
+                })
+                .OrderBy(instrument => instrument.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return new MeasurementCatalog
+            {
+                Instruments = instrumentSlices
+            };
         }
 
         private static IEnumerable<IReadOnlyList<string>> Clone(IEnumerable<IReadOnlyList<string>> source)
