@@ -33,6 +33,12 @@ public sealed class HttpLiveMeasurementClient : ILiveMeasurementClient
             static (_, _, aggregateMessage) => new LiveMeasurementClientException(aggregateMessage));
     }
 
+    public async Task<MeasurementCatalog> GetCatalogAsync(CancellationToken cancellationToken = default)
+    {
+        var catalog = await _probe.FetchAsync<MeasurementCatalog>("api/live/catalog", cancellationToken).ConfigureAwait(false);
+        return catalog ?? MeasurementCatalog.Empty;
+    }
+
     public async Task<IReadOnlyList<string>> GetAvailableKeysAsync(CancellationToken cancellationToken = default)
     {
         var result = await _probe.FetchListAsync<string>("api/keys", cancellationToken).ConfigureAwait(false);

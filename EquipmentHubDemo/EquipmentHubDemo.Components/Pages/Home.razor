@@ -6,212 +6,329 @@
 
 @inject ILiveMeasurementClient Measurements
 
-<section class="page-intro">
-    <h3 class="page-intro__title">Live Measurements (Debug)</h3>
-    <p class="page-intro__subtitle text-muted">Charts update automatically as data arrives from the live cache.</p>
-</section>
+<div class="dashboard-layout">
+    <aside class="dashboard-layout__slicer" aria-label="Instrument slicer">
+        <section class="slicer">
+            <header class="slicer__header">
+                <h3 class="slicer__title">Instrument slicer</h3>
+                <p class="slicer__subtitle text-muted">Pin the metrics you want to monitor in the live grid.</p>
+            </header>
 
-@if (!string.IsNullOrEmpty(error))
-{
-    <div class="alert alert-danger">@error</div>
-}
+            <div class="slicer__search">
+                <label class="slicer__search-label" for="instrument-search">Search instruments</label>
+                <input id="instrument-search"
+                       class="slicer__search-input form-control"
+                       type="search"
+                       placeholder="Filter by instrument or tag"
+                       @bind="InstrumentSearch"
+                       @bind:event="oninput" />
+            </div>
 
-<section class="status-section">
-    <h3 class="status-section__title">System Health Overview</h3>
-    <p class="status-section__subtitle text-muted">
-        Monitoring and predictive maintenance pipelines run continuously. These summaries show the agent's latest telemetry and maintenance planning output.
-    </p>
+            @{
+                var filteredInstruments = GetFilteredInstruments();
+                var activeInstrument = GetActiveInstrument();
+            }
 
-    @if (!string.IsNullOrEmpty(statusError))
-    {
-        <div class="alert alert-warning" role="status">@statusError</div>
-    }
-    else
-    {
-        var predictiveStatuses = GetPredictiveStatuses();
-        var monitoringStatuses = GetMonitoringStatuses();
+            <div class="slicer__summary" aria-live="polite">
+                <span class="slicer__summary-count">@_selectedKeys.Count</span>
+                <span class="slicer__summary-caption">of @MaxChartsDisplayed charts active</span>
+            </div>
 
-        <div class="status-legend" role="list" aria-label="Status legend">
-            @foreach (var badge in GetLegendBadges())
+            <div class="slicer__instrument-list" role="list">
+                @if (filteredInstruments.Count == 0)
+                {
+                    <div class="slicer__empty text-muted">No instruments match the search.</div>
+                }
+                else
+                {
+                    foreach (var instrument in filteredInstruments)
+                    {
+                        var isActive = string.Equals(_activeInstrumentId, instrument.Id, StringComparison.Ordinal);
+                        <button type="button"
+                                class="slicer__instrument @(isActive ? "slicer__instrument--active" : null)"
+                                role="listitem"
+                                @onclick="() => SelectInstrument(instrument.Id)">
+                            <span class="slicer__instrument-name">@instrument.DisplayName</span>
+                            <span class="slicer__instrument-count">@instrument.Metrics.Count</span>
+                        </button>
+                    }
+                }
+            </div>
+
+            @if (activeInstrument is not null)
             {
-                <div class="status-legend__item" role="listitem">
-                    <span class="@badge.CssClass" aria-label="@badge.AriaLabel">
-                        <span aria-hidden="true" class="status-badge__icon">@badge.Icon</span>
-                        <span class="status-badge__text">@badge.Label</span>
-                    </span>
-                    <span class="status-legend__description">@badge.Description</span>
+                <div class="slicer__metrics" aria-live="polite">
+                    <h5 class="slicer__metrics-title">@activeInstrument.DisplayName metrics</h5>
+                    <div class="slicer__metric-actions" role="group" aria-label="Metric quick actions">
+                        <button type="button"
+                                class="btn btn-sm btn-primary"
+                                @onclick="PinRecommendedMetricsAsync">
+                            Pin recommended
+                        </button>
+                        <button type="button"
+                                class="btn btn-sm btn-outline-secondary"
+                                @onclick="ClearInstrumentPinsAsync">
+                            Clear instrument pins
+                        </button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_selectionFeedback))
+                    {
+                        <p class="slicer__selection-feedback @(_selectionFeedbackIsWarning ? "slicer__selection-feedback--warning" : null)"
+                           role="status">@_selectionFeedback</p>
+                    }
+                    <ul class="slicer__metric-list" role="list">
+                        @foreach (var metric in activeInstrument.Metrics)
+                        {
+                            var checkboxId = BuildMetricCheckboxId(metric.Key);
+                            var isSelected = IsMetricPinned(metric.Key);
+                            <li class="slicer__metric-item" role="listitem">
+                                <label class="slicer__metric" for="@checkboxId">
+                                    <input id="@checkboxId"
+                                           class="slicer__metric-checkbox"
+                                           type="checkbox"
+                                           checked="@isSelected"
+                                           @onchange="async args => await ToggleMetricAsync(metric.Key, args.Value is bool b && b)" />
+                                    <span class="slicer__metric-name">@metric.DisplayName</span>
+                                    @if (metric.IsPreferred)
+                                    {
+                                        <span class="slicer__metric-badge">Recommended</span>
+                                    }
+                                </label>
+                            </li>
+                        }
+                    </ul>
                 </div>
             }
-        </div>
+        </section>
+    </aside>
 
-        <div class="status-panels">
-            <article class="status-panel" aria-labelledby="predictive-panel-title">
-                <header class="status-panel__header">
-                    <h4 id="predictive-panel-title" class="status-panel__title">Predictive Maintenance</h4>
-                    <span class="text-muted small">Autogenerated plans per instrument metric</span>
-                </header>
+    <div class="dashboard-layout__main">
+        <section class="page-intro">
+            <h3 class="page-intro__title">Live Measurements (Debug)</h3>
+            <p class="page-intro__subtitle text-muted">Charts update automatically as data arrives from the live cache.</p>
+        </section>
 
-                @if (predictiveStatuses.Count == 0)
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+
+        <section class="chart-summary" aria-live="polite">
+            <div class="chart-summary__stat">
+                <span class="chart-summary__value">@_selectedKeys.Count</span>
+                <span class="chart-summary__label">Charts displayed</span>
+            </div>
+            <div class="chart-summary__stat">
+                <span class="chart-summary__value">@GetActiveSampleCountText()</span>
+                <span class="chart-summary__label">Samples streaming</span>
+            </div>
+            <div class="chart-summary__chips" role="list">
+                @foreach (var key in _selectedKeys)
                 {
-                    <p class="status-panel__empty text-muted">Predictive insights will appear as soon as diagnostic samples arrive.</p>
+                    <span class="chart-chip" role="listitem">@BuildChipLabel(key)</span>
                 }
-                else
-                {
-                    <ul class="predictive-list" role="list">
-                        @foreach (var status in predictiveStatuses)
-                        {
-                            <li class="predictive-list__item" role="listitem">
-                                <div class="predictive-card">
-                                    <header class="predictive-card__header">
-                                        @{ var severity = BuildMaintenanceBadge(status); }
-                                        <h6 class="predictive-card__title">@status.InstrumentId<span class="predictive-card__metric">@status.Metric</span></h6>
-                                        <div class="predictive-card__severity" role="group" aria-label="Maintenance status">
-                                            <span class="@severity.CssClass" aria-label="@severity.AriaLabel">
-                                                <span aria-hidden="true" class="status-badge__icon">@severity.Icon</span>
-                                                <span class="status-badge__text">@severity.Label</span>
-                                            </span>
-                                            <span class="predictive-card__severity-description">@severity.Description</span>
-                                        </div>
-                                    </header>
-                                    <dl class="predictive-card__details">
-                                        <div class="predictive-card__detail">
-                                            <dt>Last Insight</dt>
-                                            <dd>@status.Insight.TimestampUtc.ToLocalTime().ToString("g")</dd>
-                                        </div>
-                                        <div class="predictive-card__detail">
-                                            <dt>Mean ± σ</dt>
-                                            <dd>@status.Insight.Mean.ToString("F2") ± @status.Insight.StandardDeviation.ToString("F2")</dd>
-                                        </div>
-                                        <div class="predictive-card__detail">
-                                            <dt>Service</dt>
-                                            <dd>
-                                                <span class="predictive-card__plan-date">@status.ServicePlan.ScheduledFor.ToLocalTime().ToString("g")</span>
-                                                <span class="predictive-card__plan-notes text-muted">@status.ServicePlan.Notes</span>
-                                            </dd>
-                                        </div>
-                                        <div class="predictive-card__detail">
-                                            <dt>Repair</dt>
-                                            <dd>
-                                                <span class="predictive-card__plan-date">@status.RepairPlan.ScheduledFor.ToLocalTime().ToString("g")</span>
-                                                <span class="predictive-card__plan-notes text-muted">@status.RepairPlan.Notes</span>
-                                            </dd>
-                                        </div>
-                                    </dl>
-                                </div>
-                            </li>
-                        }
-                    </ul>
-                }
-            </article>
+            </div>
+        </section>
 
-            <article class="status-panel" aria-labelledby="monitoring-panel-title">
-                <header class="status-panel__header">
-                    <h4 id="monitoring-panel-title" class="status-panel__title">Monitoring Telemetry</h4>
-                    <span class="text-muted small">Latest agent heartbeats and health checks</span>
-                </header>
+        <section class="status-section">
+            <h3 class="status-section__title">System Health Overview</h3>
+            <p class="status-section__subtitle text-muted">
+                Monitoring and predictive maintenance pipelines run continuously. These summaries show the agent's latest telemetry and
+                maintenance planning output.
+            </p>
 
-                @if (monitoringStatuses.Count == 0)
-                {
-                    <p class="status-panel__empty text-muted">Awaiting monitoring data from the agent…</p>
-                }
-                else
-                {
-                    <ul class="monitoring-list" role="list">
-                        @foreach (var status in monitoringStatuses)
-                        {
-                            <li class="monitoring-list__item" role="listitem">
-                                <div class="monitoring-card">
-                                    <header class="monitoring-card__header">
-                                        @{ var telemetry = BuildMonitoringBadge(status); }
-                                        <h6 class="monitoring-card__title">@status.InstrumentId<span class="monitoring-card__metric">@status.Metric</span></h6>
-                                        <div class="monitoring-card__status" role="group" aria-label="Telemetry status">
-                                            <span class="@telemetry.CssClass" aria-label="@telemetry.AriaLabel">
-                                                <span aria-hidden="true" class="status-badge__icon">@telemetry.Icon</span>
-                                                <span class="status-badge__text">@telemetry.Label</span>
-                                            </span>
-                                            <span class="monitoring-card__status-description">@telemetry.Description</span>
-                                        </div>
-                                    </header>
-                                    <dl class="monitoring-card__details">
-                                        <div class="monitoring-card__detail">
-                                            <dt>Last value</dt>
-                                            <dd>@(status.LastValue?.ToString("F2") ?? "n/a")</dd>
-                                        </div>
-                                        <div class="monitoring-card__detail">
-                                            <dt>Observed</dt>
-                                            <dd>@(status.LastObservedUtc?.ToLocalTime().ToString("g") ?? "n/a")</dd>
-                                        </div>
-                                        <div class="monitoring-card__detail">
-                                            <dt>Freshness</dt>
-                                            <dd>@FormatAge(status.Age)</dd>
-                                        </div>
-                                    </dl>
-                                </div>
-                            </li>
-                        }
-                    </ul>
-                }
-            </article>
-        </div>
-    }
-</section>
-
-@{
-    var activeStreams = GetActiveStreams().ToList();
-    var placeholderCount = Math.Max(0, MaxChartsDisplayed - activeStreams.Count);
-}
-
-<div class="chart-grid__wrapper">
-    @if (activeStreams.Count == 0)
-    {
-        <div class="chart-grid__empty alert alert-info" role="status">
-            Waiting for live data…
-        </div>
-    }
-    else
-    {
-        <div class="chart-grid" role="list">
-            @foreach (var stream in activeStreams)
+            @if (!string.IsNullOrEmpty(statusError))
             {
-                var summary = BuildStreamSummary(stream);
-                <div class="chart-grid__cell" role="listitem">
-                    <article class="chart-grid__card" aria-labelledby="@summary.HeaderId">
-                        <header class="chart-card__header">
-                            <div class="chart-card__identity">
-                                <h6 id="@summary.HeaderId" class="chart-card__instrument">@summary.InstrumentLabel</h6>
-                                <span class="chart-card__metric">@summary.MetricLabel</span>
-                            </div>
-                            <dl class="chart-card__stats" aria-label="Stream summary">
-                                <div class="chart-card__stat">
-                                    <dt>Samples</dt>
-                                    <dd>@summary.SamplesText</dd>
-                                </div>
-                                <div class="chart-card__stat">
-                                    <dt>Last sample</dt>
-                                    <dd>@summary.LastObservedText</dd>
-                                </div>
-                                <div class="chart-card__stat">
-                                    <dt>Latest value</dt>
-                                    <dd>@summary.LatestValueText</dd>
-                                </div>
-                            </dl>
+                <div class="alert alert-warning" role="status">@statusError</div>
+            }
+            else
+            {
+                var predictiveStatuses = GetPredictiveStatuses();
+                var monitoringStatuses = GetMonitoringStatuses();
+
+                <div class="status-legend" role="list" aria-label="Status legend">
+                    @foreach (var badge in GetLegendBadges())
+                    {
+                        <div class="status-legend__item" role="listitem">
+                            <span class="@badge.CssClass" aria-label="@badge.AriaLabel">
+                                <span aria-hidden="true" class="status-badge__icon">@badge.Icon</span>
+                                <span class="status-badge__text">@badge.Label</span>
+                            </span>
+                            <span class="status-legend__description">@badge.Description</span>
+                        </div>
+                    }
+                </div>
+
+                <div class="status-panels">
+                    <article class="status-panel" aria-labelledby="predictive-panel-title">
+                        <header class="status-panel__header">
+                            <h4 id="predictive-panel-title" class="status-panel__title">Predictive Maintenance</h4>
+                            <span class="text-muted small">Autogenerated plans per instrument metric</span>
                         </header>
-                        <ChartIsland Points="stream.Points"
-                                     Title="summary.Title" />
+
+                        @if (predictiveStatuses.Count == 0)
+                        {
+                            <p class="status-panel__empty text-muted">Predictive insights will appear as soon as diagnostic samples arrive.</p>
+                        }
+                        else
+                        {
+                            <ul class="predictive-list" role="list">
+                                @foreach (var status in predictiveStatuses)
+                                {
+                                    <li class="predictive-list__item" role="listitem">
+                                        <div class="predictive-card">
+                                            <header class="predictive-card__header">
+                                                @{ var severity = BuildMaintenanceBadge(status); }
+                                                <h6 class="predictive-card__title">@status.InstrumentId<span class="predictive-card__metric">@status.Metric</span></h6>
+                                                <div class="predictive-card__severity" role="group" aria-label="Maintenance status">
+                                                    <span class="@severity.CssClass" aria-label="@severity.AriaLabel">
+                                                        <span aria-hidden="true" class="status-badge__icon">@severity.Icon</span>
+                                                        <span class="status-badge__text">@severity.Label</span>
+                                                    </span>
+                                                    <span class="predictive-card__severity-description">@severity.Description</span>
+                                                </div>
+                                            </header>
+                                            <dl class="predictive-card__details">
+                                                <div class="predictive-card__detail">
+                                                    <dt>Last Insight</dt>
+                                                    <dd>@status.Insight.TimestampUtc.ToLocalTime().ToString("g")</dd>
+                                                </div>
+                                                <div class="predictive-card__detail">
+                                                    <dt>Mean ± σ</dt>
+                                                    <dd>@status.Insight.Mean.ToString("F2") ± @status.Insight.StandardDeviation.ToString("F2")</dd>
+                                                </div>
+                                                <div class="predictive-card__detail">
+                                                    <dt>Service</dt>
+                                                    <dd>
+                                                        <span class="predictive-card__plan-date">@status.ServicePlan.ScheduledFor.ToLocalTime().ToString("g")</span>
+                                                        <span class="predictive-card__plan-notes text-muted">@status.ServicePlan.Notes</span>
+                                                    </dd>
+                                                </div>
+                                                <div class="predictive-card__detail">
+                                                    <dt>Repair</dt>
+                                                    <dd>
+                                                        <span class="predictive-card__plan-date">@status.RepairPlan.ScheduledFor.ToLocalTime().ToString("g")</span>
+                                                        <span class="predictive-card__plan-notes text-muted">@status.RepairPlan.Notes</span>
+                                                    </dd>
+                                                </div>
+                                            </dl>
+                                        </div>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </article>
+
+                    <article class="status-panel" aria-labelledby="monitoring-panel-title">
+                        <header class="status-panel__header">
+                            <h4 id="monitoring-panel-title" class="status-panel__title">Monitoring Telemetry</h4>
+                            <span class="text-muted small">Latest agent heartbeats and health checks</span>
+                        </header>
+
+                        @if (monitoringStatuses.Count == 0)
+                        {
+                            <p class="status-panel__empty text-muted">Awaiting monitoring data from the agent…</p>
+                        }
+                        else
+                        {
+                            <ul class="monitoring-list" role="list">
+                                @foreach (var status in monitoringStatuses)
+                                {
+                                    <li class="monitoring-list__item" role="listitem">
+                                        <div class="monitoring-card">
+                                            <header class="monitoring-card__header">
+                                                @{ var telemetry = BuildMonitoringBadge(status); }
+                                                <h6 class="monitoring-card__title">@status.InstrumentId<span class="monitoring-card__metric">@status.Metric</span></h6>
+                                                <div class="monitoring-card__status" role="group" aria-label="Telemetry status">
+                                                    <span class="@telemetry.CssClass" aria-label="@telemetry.AriaLabel">
+                                                        <span aria-hidden="true" class="status-badge__icon">@telemetry.Icon</span>
+                                                        <span class="status-badge__text">@telemetry.Label</span>
+                                                    </span>
+                                                    <span class="monitoring-card__status-description">@telemetry.Description</span>
+                                                </div>
+                                            </header>
+                                            <dl class="monitoring-card__details">
+                                                <div class="monitoring-card__detail">
+                                                    <dt>Last value</dt>
+                                                    <dd>@(status.LastValue?.ToString("F2") ?? "n/a")</dd>
+                                                </div>
+                                                <div class="monitoring-card__detail">
+                                                    <dt>Observed</dt>
+                                                    <dd>@(status.LastObservedUtc?.ToLocalTime().ToString("g") ?? "n/a")</dd>
+                                                </div>
+                                                <div class="monitoring-card__detail">
+                                                    <dt>Freshness</dt>
+                                                    <dd>@FormatAge(status.Age)</dd>
+                                                </div>
+                                            </dl>
+                                        </div>
+                                    </li>
+                                }
+                            </ul>
+                        }
                     </article>
                 </div>
             }
+        </section>
 
-            @for (var i = 0; i < placeholderCount; i++)
+        @{
+            var activeStreams = GetActiveStreams().ToList();
+            var placeholderCount = Math.Max(0, MaxChartsDisplayed - activeStreams.Count);
+        }
+
+        <div class="chart-grid__wrapper">
+            @if (activeStreams.Count == 0)
             {
-                <div class="chart-grid__cell" role="listitem">
-                    <div class="chart-grid__card chart-grid__card--placeholder">
-                        <div class="chart-grid__placeholder text-muted">
-                            Awaiting stream…
+                <div class="chart-grid__empty alert alert-info" role="status">
+                    Waiting for live data…
+                </div>
+            }
+            else
+            {
+                <div class="chart-grid" role="list" style="--cols:@GridCols">
+                    @foreach (var stream in activeStreams)
+                    {
+                        var summary = BuildStreamSummary(stream);
+                        <div class="chart-grid__cell" role="listitem">
+                            <article class="chart-grid__card" aria-labelledby="@summary.HeaderId">
+                                <header class="chart-card__header">
+                                    <div class="chart-card__identity">
+                                        <h6 id="@summary.HeaderId" class="chart-card__instrument">@summary.InstrumentLabel</h6>
+                                        <span class="chart-card__metric">@summary.MetricLabel</span>
+                                    </div>
+                                    <dl class="chart-card__stats" aria-label="Stream summary">
+                                        <div class="chart-card__stat">
+                                            <dt>Samples</dt>
+                                            <dd>@summary.SamplesText</dd>
+                                        </div>
+                                        <div class="chart-card__stat">
+                                            <dt>Last sample</dt>
+                                            <dd>@summary.LastObservedText</dd>
+                                        </div>
+                                        <div class="chart-card__stat">
+                                            <dt>Latest value</dt>
+                                            <dd>@summary.LatestValueText</dd>
+                                        </div>
+                                    </dl>
+                                </header>
+                                <ChartIsland Points="stream.Points"
+                                             Title="summary.Title" />
+                            </article>
                         </div>
-                    </div>
+                    }
+
+                    @for (var i = 0; i < placeholderCount; i++)
+                    {
+                        <div class="chart-grid__cell" role="listitem">
+                            <div class="chart-grid__card chart-grid__card--placeholder">
+                                <div class="chart-grid__placeholder text-muted">
+                                    Awaiting stream…
+                                </div>
+                            </div>
+                        </div>
+                    }
                 </div>
             }
         </div>
-    }
+    </div>
 </div>

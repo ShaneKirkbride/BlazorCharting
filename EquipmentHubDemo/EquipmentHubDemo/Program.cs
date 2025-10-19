@@ -140,6 +140,7 @@ builder.Services.AddSingleton<IRfPathService, RfPathService>();
 builder.Services.AddSingleton<INetworkTrafficOptimizer, KubernetesNetworkTrafficOptimizer>();
 builder.Services.AddScoped<PredictiveStatusProvider>();
 builder.Services.AddScoped<MonitoringStatusProvider>();
+builder.Services.AddSingleton<ILiveCatalogProvider, LiveCatalogProvider>();
 
 // Background services (broker + workers)
 builder.Services.AddHostedService<ZmqBrokerService>();
@@ -176,10 +177,17 @@ app.UseAntiforgery();
 app.UseCors("DevClient");
 
 // ---------- Minimal read APIs for WASM UI ----------
-app.MapGet("/api/keys", (ILiveCache cache) =>
+app.MapGet("/api/keys", (ILiveCatalogProvider provider) =>
 {
     // returns: ["UXG-01:Temperature", "UXG-01:Humidity", "UXG-01:Power (240VAC)", ...]
-    return Results.Json(cache.Keys);
+    var catalog = provider.BuildCatalog();
+    return Results.Json(catalog.GetAllKeys());
+});
+
+app.MapGet("/api/live/catalog", (ILiveCatalogProvider provider) =>
+{
+    var catalog = provider.BuildCatalog();
+    return Results.Json(catalog);
 });
 
 app.MapGet("/api/live", (string key, long? sinceTicks, ILiveCache cache) =>

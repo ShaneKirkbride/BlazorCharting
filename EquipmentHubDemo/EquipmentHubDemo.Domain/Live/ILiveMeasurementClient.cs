@@ -8,6 +8,13 @@ namespace EquipmentHubDemo.Domain.Live;
 public interface ILiveMeasurementClient
 {
     /// <summary>
+    /// Retrieves the live measurement catalog grouped by instrument.
+    /// </summary>
+    /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
+    /// <returns>A catalog describing the available instruments and metrics.</returns>
+    Task<MeasurementCatalog> GetCatalogAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Retrieves the list of available measurement keys that can be charted.
     /// </summary>
     /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>

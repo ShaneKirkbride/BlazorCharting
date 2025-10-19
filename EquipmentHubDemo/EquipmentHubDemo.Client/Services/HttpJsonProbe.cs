@@ -81,6 +81,61 @@ internal sealed class HttpJsonProbe
         throw _exceptionFactory(relativePath, errors, aggregateMessage);
     }
 
+    public async Task<T> FetchAsync<T>(string relativePath, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            throw new ArgumentException("Relative path must be provided.", nameof(relativePath));
+        }
+
+        var errors = new List<string>();
+
+        foreach (var baseUri in EnumerateBaseUris())
+        {
+            var requestUri = new Uri(baseUri, relativePath);
+
+            try
+            {
+                using var response = await _httpClient
+                    .GetAsync(requestUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                    .ConfigureAwait(false);
+
+                var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    errors.Add($"[{requestUri}] HTTP {(int)response.StatusCode} ({response.ReasonPhrase})");
+                    continue;
+                }
+
+                if (!IsJsonPayload(response.Content.Headers.ContentType, payload))
+                {
+                    var mediaType = response.Content.Headers.ContentType?.MediaType ?? "unknown";
+                    errors.Add($"[{requestUri}] Non-JSON payload (Content-Type '{mediaType}', Body '{Preview(payload)}')");
+                    continue;
+                }
+
+                try
+                {
+                    var deserialized = JsonSerializer.Deserialize<T>(payload, _serializerOptions);
+                    Volatile.Write(ref _preferredBaseUri, baseUri);
+                    return deserialized is null ? default! : deserialized;
+                }
+                catch (JsonException ex)
+                {
+                    errors.Add($"[{requestUri}] JSON parse error: {ex.Message}");
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                errors.Add($"[{requestUri}] {ex.Message}");
+            }
+        }
+
+        var aggregateMessage = BuildAggregateError(relativePath, errors);
+        throw _exceptionFactory(relativePath, errors, aggregateMessage);
+    }
+
     private IEnumerable<Uri> EnumerateBaseUris()
     {
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
