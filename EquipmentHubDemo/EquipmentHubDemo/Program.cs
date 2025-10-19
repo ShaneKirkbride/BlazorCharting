@@ -130,6 +130,7 @@ builder.Services.AddSingleton<IDiagnosticRepository>(sp =>
 
 builder.Services.Configure<LiveCacheOptions>(builder.Configuration.GetSection(LiveCacheOptions.SectionName));
 builder.Services.Configure<TtlWorkerOptions>(builder.Configuration.GetSection(TtlWorkerOptions.SectionName));
+builder.Services.Configure<FilterStoreOptions>(builder.Configuration.GetSection(FilterStoreOptions.SectionName));
 builder.Services.AddSingleton<ILiveCache, LiveCache>();
 builder.Services.AddSingleton<IScpiCommandClient, SimulatedScpiCommandClient>();
 builder.Services.AddSingleton<IPredictiveDiagnosticsService, PredictiveDiagnosticsService>();
@@ -141,6 +142,8 @@ builder.Services.AddSingleton<INetworkTrafficOptimizer, KubernetesNetworkTraffic
 builder.Services.AddScoped<PredictiveStatusProvider>();
 builder.Services.AddScoped<MonitoringStatusProvider>();
 builder.Services.AddSingleton<ILiveCatalogProvider, LiveCatalogProvider>();
+builder.Services.AddSingleton<IMeasurementPipeline, FilterStoreMeasurementPipeline>();
+builder.Services.AddSingleton<ITtlCleanupService, TtlCleanupService>();
 
 // Background services (broker + workers)
 builder.Services.AddHostedService<ZmqBrokerService>();
