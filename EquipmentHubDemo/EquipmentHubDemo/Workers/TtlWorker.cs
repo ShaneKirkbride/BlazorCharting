@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
-using EquipmentHubDemo.Domain;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace EquipmentHubDemo.Workers
 {
@@ -15,30 +13,21 @@ namespace EquipmentHubDemo.Workers
         private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(2);
         private static readonly TimeSpan MaxBackoff = TimeSpan.FromMinutes(5);
 
-        private readonly IMeasurementRepository _repo;
+        private readonly ITtlCleanupService _cleanupService;
         private readonly TimeProvider _time;
         private readonly ILogger<TtlWorker> _log;
-        private readonly TimeSpan _historyRetention;
         private readonly Random _rng;
 
         public TtlWorker(
-            IMeasurementRepository repo,
+            ITtlCleanupService cleanupService,
             TimeProvider time,
-            IOptions<TtlWorkerOptions> options,
-            ILogger<TtlWorker> log)
+            ILogger<TtlWorker> log,
+            Random random)
         {
-            _repo = repo ?? throw new ArgumentNullException(nameof(repo));
+            _cleanupService = cleanupService ?? throw new ArgumentNullException(nameof(cleanupService));
             _time = time ?? throw new ArgumentNullException(nameof(time));
             _log = log ?? throw new ArgumentNullException(nameof(log));
-
-            if (options?.Value is null)
-                throw new ArgumentException("Options value cannot be null.", nameof(options));
-
-            if (options.Value.HistoryRetention <= TimeSpan.Zero)
-                throw new ArgumentOutOfRangeException(nameof(options), options.Value.HistoryRetention, "HistoryRetention must be positive.");
-
-            _historyRetention = options.Value.HistoryRetention;
-            _rng = Random.Shared;
+            _rng = random ?? throw new ArgumentNullException(nameof(random));
         }
 
         protected override async Task ExecuteAsync(CancellationToken ct)
@@ -65,12 +54,13 @@ namespace EquipmentHubDemo.Workers
                     }
 
                     var nowUtc = _time.GetUtcNow().UtcDateTime;
-                    var cutoffUtc = nowUtc - _historyRetention;
-
-                    var deleted = _repo.DeleteHistoryOlderThan(cutoffUtc);
-                    if (deleted > 0)
+                    var result = _cleanupService.Cleanup(nowUtc);
+                    if (result.DeletedCount > 0)
                     {
-                        _log.LogInformation("TTL deleted {Count} history docs older than {Cutoff:o}.", deleted, cutoffUtc);
+                        _log.LogInformation(
+                            "TTL deleted {Count} history docs older than {Cutoff:o}.",
+                            result.DeletedCount,
+                            result.CutoffUtc);
                     }
 
                     // success: reset backoff

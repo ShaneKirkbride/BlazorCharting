@@ -1,8 +1,8 @@
+using System;
 using System.Text.Json;
 using EquipmentHubDemo.Domain;
-using EquipmentHubDemo.Infrastructure;
-using EquipmentHubDemo.Domain.Predict;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using NetMQ;
 using NetMQ.Sockets;
 using static EquipmentHubDemo.Messaging.Zmq;
@@ -14,13 +14,13 @@ namespace EquipmentHubDemo.Workers;
 /// </summary>
 public sealed class FilterStoreWorker : BackgroundService
 {
-    private readonly IMeasurementRepository _repo;
-    private readonly IDiagnosticRepository _diagnostics;
+    private readonly IMeasurementPipeline _pipeline;
+    private readonly ILogger<FilterStoreWorker> _logger;
 
-    public FilterStoreWorker(IMeasurementRepository repo, IDiagnosticRepository diagnostics)
+    public FilterStoreWorker(IMeasurementPipeline pipeline, ILogger<FilterStoreWorker> logger)
     {
-        _repo = repo ?? throw new ArgumentNullException(nameof(repo));
-        _diagnostics = diagnostics ?? throw new ArgumentNullException(nameof(diagnostics));
+        _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     protected override Task ExecuteAsync(CancellationToken ct)
@@ -45,27 +45,39 @@ public sealed class FilterStoreWorker : BackgroundService
 
                     var payload = msg[1].ConvertToString();
 
-                    // 👇 use shared options
-                    var m = JsonSerializer.Deserialize<Measurement>(payload, JsonOptions.Default);
-                    if (m is null) continue;
-
+                    Measurement? measurement;
                     try
                     {
-                        await Task.Delay(200, ct).ConfigureAwait(false); // demo delay
+                        measurement = JsonSerializer.Deserialize<Measurement>(payload, JsonOptions.Default);
+                    }
+                    catch (JsonException ex)
+                    {
+                        _logger.LogWarning(ex, "Discarded malformed measurement payload.");
+                        continue;
+                    }
+
+                    if (measurement is null)
+                    {
+                        _logger.LogWarning("Discarded empty measurement payload.");
+                        continue;
+                    }
+
+                    FilteredMeasurement filtered;
+                    try
+                    {
+                        filtered = await _pipeline.ProcessAsync(measurement, ct).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {
                         break;
                     }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Filter/store pipeline failed for {Key}.", measurement.Key.ToString());
+                        continue;
+                    }
 
-                    var f = new FilteredMeasurement(m.Key, m.Value, DateTime.UtcNow);
-
-                    _repo.AppendHistory(f);
-                    _repo.UpsertLatest(f);
-
-                    await AppendDiagnosticsAsync(f, ct).ConfigureAwait(false);
-
-                    var outJson = JsonSerializer.Serialize(f, JsonOptions.Default);
+                    var outJson = JsonSerializer.Serialize(filtered, JsonOptions.Default);
                     var outMsg = new NetMQMessage(2);
                     outMsg.Append(TopicFiltered);
                     outMsg.Append(outJson);
@@ -76,24 +88,4 @@ public sealed class FilterStoreWorker : BackgroundService
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default)
             .Unwrap();
-
-    private static bool ShouldRecordDiagnostics(string metric)
-        => string.Equals(metric, "Temperature", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(metric, "Humidity", StringComparison.OrdinalIgnoreCase);
-
-    private async Task AppendDiagnosticsAsync(FilteredMeasurement measurement, CancellationToken ct)
-    {
-        if (!ShouldRecordDiagnostics(measurement.Key.Metric))
-        {
-            return;
-        }
-
-        var sample = new DiagnosticSample(
-            measurement.Key.InstrumentId,
-            measurement.Key.Metric,
-            measurement.Value,
-            measurement.TimestampUtc);
-
-        await _diagnostics.AddAsync(sample, ct).ConfigureAwait(false);
-    }
 }
